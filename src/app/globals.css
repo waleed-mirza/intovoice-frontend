@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap");
+
+:root {
+  --voice-primary: #000000;
+  --voice-primary-hover: #1f2937;
+  --voice-secondary: #1f2937;
+  --voice-muted: #9ca3af;
+  --voice-subtle: #f9fafb;
+  --voice-track: #e5e7eb;
+  --voice-badge-bg: #f3f4f6;
+  --voice-badge-text: #374151;
+  --voice-ring: #9ca3af;
+  --voice-dots: #374151;
+  --voice-tab-active-bg: #111827;
+  --voice-tab-active-text: #ffffff;
+  --voice-border-active: #111827;
+}
+
+html {
+  font-size: 15px;
+}
+
+body {
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: #f9fafb;
+  color: #111827;
+}
+
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes voiceCommentPulse {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(2);
+  }
+}

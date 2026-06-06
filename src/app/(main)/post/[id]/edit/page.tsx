@@ -1,0 +1,352 @@
+"use client";
+
+import React, { useState, useEffect, useRef } from "react";
+import { useRouter, useParams } from "next/navigation";
+import Api from "@/lib/axios";
+import { useAuth } from "@/providers/AuthProvider";
+import { useVoiceUpload } from "@/hooks/useVoiceUpload";
+import { formatDuration } from "@/utils/voiceHelpers";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import {
+  Loader2,
+  Upload,
+  Music,
+  ImageIcon,
+  Clock,
+  AlertCircle,
+  CheckCircle,
+  X,
+  Save,
+} from "@/components/voice/VoiceIcons";
+
+const MAX_DURATION = 3600;
+const MAX_AUDIO_SIZE = 500 * 1024 * 1024;
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+interface PostData {
+  id: string;
+  title: string;
+  description?: string;
+  thumbnailURL: string;
+  audioURL: string;
+  duration: number;
+  station: { id: string; name: string; handle: string; user: { id: string } };
+}
+
+export default function EditPostPage() {
+  const router = useRouter();
+  const params = useParams();
+  const id = params.id as string;
+  const { user, userLoading } = useAuth();
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  const [post, setPost] = useState<PostData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreview, setThumbnailPreview] = useState("");
+  const [newThumbnailURL, setNewThumbnailURL] = useState("");
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [newAudioURL, setNewAudioURL] = useState("");
+  const [newDuration, setNewDuration] = useState(0);
+
+  const thumbnailUpload = useVoiceUpload();
+  const audioUpload = useVoiceUpload();
+
+  const loadPost = async () => {
+    try {
+      setLoading(true);
+      const res = await Api.get(`/voice/post/${id}`);
+      const p: PostData = res.data.result;
+      if (p.station.user.id !== user?.id) {
+        router.replace(`/post/${id}`);
+        return;
+      }
+      setPost(p);
+      setTitle(p.title);
+      setDescription(p.description || "");
+    } catch {
+      setError("Failed to load audio.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    if (userLoading) return;
+    if (!user) {
+      router.push(`/auth/login?redirect=/post/${id}/edit`);
+      return;
+    }
+    loadPost();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, user, userLoading]);
+
+  const handleThumbnailSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_IMAGE_SIZE) {
+      setError("Thumbnail must be less than 10MB");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setError("Please select an image file");
+      return;
+    }
+    setThumbnailFile(file);
+    setThumbnailPreview(URL.createObjectURL(file));
+    setNewThumbnailURL("");
+    setError(null);
+  };
+
+  const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_AUDIO_SIZE) {
+      setError("Audio file must be less than 500MB");
+      return;
+    }
+    if (!file.type.startsWith("audio/")) {
+      setError("Please select an audio file");
+      return;
+    }
+    setAudioFile(file);
+    setNewAudioURL("");
+    setNewDuration(0);
+    setError(null);
+    const objectUrl = URL.createObjectURL(file);
+    if (audioRef.current) audioRef.current.src = objectUrl;
+  };
+
+  const handleAudioLoad = () => {
+    if (audioRef.current) {
+      const d = Math.floor(audioRef.current.duration);
+      setNewDuration(d);
+      if (d > MAX_DURATION) {
+        setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+      } else {
+        setError(null);
+      }
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!post) return;
+    if (!title.trim()) {
+      setError("Title is required");
+      return;
+    }
+    if (audioFile && newDuration > MAX_DURATION) {
+      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+      return;
+    }
+    try {
+      setSaving(true);
+      setError(null);
+      let finalThumbnailURL = post.thumbnailURL;
+      if (thumbnailFile && !newThumbnailURL) {
+        finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
+        setNewThumbnailURL(finalThumbnailURL);
+      } else if (newThumbnailURL) {
+        finalThumbnailURL = newThumbnailURL;
+      }
+      let finalAudioURL = post.audioURL;
+      let finalDuration = post.duration;
+      if (audioFile && !newAudioURL) {
+        finalAudioURL = await audioUpload.upload(audioFile, "audio");
+        setNewAudioURL(finalAudioURL);
+        finalDuration = newDuration;
+      } else if (newAudioURL) {
+        finalAudioURL = newAudioURL;
+        finalDuration = newDuration;
+      }
+      await Api.put(`/voice/post/${id}`, {
+        title: title.trim(),
+        description: description.trim(),
+        thumbnailURL: finalThumbnailURL,
+        audioURL: finalAudioURL,
+        duration: finalDuration,
+      });
+      router.push(`/post/${id}`);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } }; message?: string })
+          ?.response?.data?.message ||
+        (err as Error)?.message ||
+        "Failed to save audio";
+      setError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
+
+  if (userLoading || loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  if (!post) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+        <p className="text-gray-500">{error || "Audio not found."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <audio ref={audioRef} onLoadedMetadata={handleAudioLoad} className="hidden" />
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Edit Audio</h1>
+          <p className="text-gray-500 mt-2">Update your audio details</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              maxLength={100}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              maxLength={2000}
+              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"
+            />
+            <p className="text-sm text-gray-500 mt-1 text-right">{description.length}/2000</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <ImageIcon className="w-4 h-4 inline mr-1" />
+              Thumbnail
+            </label>
+            {!thumbnailFile && (
+              <div className="mb-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={resolveVoiceAssetUrl(post.thumbnailURL)}
+                  alt="Current thumbnail"
+                  className="w-full max-w-md h-auto rounded-lg border border-gray-200"
+                />
+              </div>
+            )}
+            {!thumbnailFile ? (
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50">
+                <Upload className="w-8 h-8 text-gray-400 mb-1" />
+                <span className="text-sm text-gray-500">Replace thumbnail (optional)</span>
+                <input type="file" accept="image/*" onChange={handleThumbnailSelect} className="hidden" />
+              </label>
+            ) : (
+              <div className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={thumbnailPreview} alt="New thumbnail" className="w-full max-w-md h-auto rounded-lg" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setThumbnailFile(null);
+                    setThumbnailPreview("");
+                    setNewThumbnailURL("");
+                    thumbnailUpload.reset();
+                  }}
+                  className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Music className="w-4 h-4 inline mr-1" />
+              Audio File
+            </label>
+            {!audioFile && (
+              <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-sm text-gray-700 font-medium flex items-center gap-2">
+                  <Music className="w-4 h-4" />
+                  Duration: {formatDuration(post.duration)}
+                </p>
+              </div>
+            )}
+            {!audioFile ? (
+              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50">
+                <Music className="w-8 h-8 text-gray-400 mb-1" />
+                <span className="text-sm text-gray-500">Replace audio file (optional)</span>
+                <input type="file" accept="audio/*" onChange={handleAudioSelect} className="hidden" />
+              </label>
+            ) : (
+              <div className="p-4 border border-gray-200 rounded-lg">
+                <div className="font-medium text-gray-900 truncate">{audioFile.name}</div>
+                {newDuration > 0 && (
+                  <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-green-50 text-green-700">
+                    <Clock className="w-4 h-4" />
+                    <span>Duration: {formatDuration(newDuration)}</span>
+                  </div>
+                )}
+                {newAudioURL && (
+                  <div className="mt-3 flex items-center gap-2 text-green-600 text-sm">
+                    <CheckCircle className="w-4 h-4" />
+                    Upload complete
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 p-4 bg-red-50 text-red-700 rounded-lg">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={
+              saving ||
+              isUploading ||
+              !title.trim() ||
+              (audioFile ? newDuration > MAX_DURATION : false)
+            }
+            className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
+          >
+            {saving || isUploading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                {isUploading ? "Uploading..." : "Saving..."}
+              </>
+            ) : (
+              <>
+                <Save className="w-5 h-5" />
+                Save Changes
+              </>
+            )}
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
