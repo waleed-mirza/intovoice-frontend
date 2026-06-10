@@ -166,7 +166,7 @@ export default function StationPage() {
 
   return (
     <>
-      <div className="relative h-32 sm:h-48 lg:h-56 bg-gray-900">
+      <div className="relative w-full aspect-[3/1] bg-gray-900">
         {station.bannerURL && (
           <Image
             src={resolveVoiceAssetUrl(station.bannerURL)}

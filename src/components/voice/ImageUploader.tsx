@@ -3,12 +3,15 @@
 import React, { useRef, useState } from "react";
 import { Camera, X, Loader2, Check } from "@/components/voice/VoiceIcons";
 import { useVoiceUpload, UploadType } from "@/hooks/useVoiceUpload";
+import ImageCropModal from "@/components/voice/ImageCropModal";
+import { STATION_BANNER_ASPECT, STATION_BANNER_SIZE_LABEL } from "@/utils/voiceHelpers";
 
 interface ImageUploaderProps {
   value: string;
   onChange: (url: string) => void;
   type: "avatar" | "banner";
   className?: string;
+  enableCrop?: boolean;
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({
@@ -16,42 +19,28 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   onChange,
   type,
   className = "",
+  enableCrop,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { upload, uploading, progress, error, reset } = useVoiceUpload();
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [cropModalOpen, setCropModalOpen] = useState(false);
 
   const isAvatar = type === "avatar";
-  const aspectRatio = isAvatar ? "aspect-square" : "aspect-[4/1]";
-  const dimensions = isAvatar ? "400x400" : "1280x320";
+  const shouldCrop = enableCrop ?? true;
+  const cropAspect = isAvatar ? 1 : STATION_BANNER_ASPECT;
+  const aspectRatio = isAvatar ? "aspect-square" : "aspect-[3/1]";
+  const dimensions = isAvatar ? "400x400" : STATION_BANNER_SIZE_LABEL;
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate file type
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file");
-      return;
-    }
-
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Image must be less than 5MB");
-      return;
-    }
-
-    // Show preview immediately
+  const uploadFile = async (file: File) => {
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
 
     try {
       const uploadedUrl = await upload(file, type as UploadType);
-      
-      // Update parent with the uploaded URL
       onChange(uploadedUrl);
-      
-      // Keep showing preview for 1 second to ensure smooth transition
+
       setTimeout(() => {
         URL.revokeObjectURL(objectUrl);
         setPreviewUrl(null);
@@ -60,11 +49,45 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
       setPreviewUrl(null);
       URL.revokeObjectURL(objectUrl);
     }
+  };
 
-    // Reset input
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Image must be less than 5MB");
+      return;
+    }
+
+    if (shouldCrop) {
+      const objectUrl = URL.createObjectURL(file);
+      setCropImageSrc(objectUrl);
+      setCropModalOpen(true);
+    } else {
+      await uploadFile(file);
+    }
+
     if (inputRef.current) {
       inputRef.current.value = "";
     }
+  };
+
+  const handleCropClose = () => {
+    setCropModalOpen(false);
+    if (cropImageSrc) {
+      URL.revokeObjectURL(cropImageSrc);
+      setCropImageSrc(null);
+    }
+  };
+
+  const handleCropComplete = async (file: File) => {
+    await uploadFile(file);
   };
 
   const handleRemove = () => {
@@ -85,6 +108,19 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
         className="hidden"
       />
 
+      {cropImageSrc && (
+        <ImageCropModal
+          isOpen={cropModalOpen}
+          imageSrc={cropImageSrc}
+          aspect={cropAspect}
+          cropShape={isAvatar ? "round" : "rect"}
+          outputFileName={isAvatar ? "avatar.jpg" : "banner.jpg"}
+          title={isAvatar ? "Crop profile photo" : "Crop cover photo"}
+          onClose={handleCropClose}
+          onComplete={handleCropComplete}
+        />
+      )}
+
       {displayUrl ? (
         <div className={`relative ${aspectRatio} rounded-lg overflow-hidden bg-gray-100`}>
           <img
@@ -92,14 +128,13 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             alt={`${type} preview`}
             className="w-full h-full object-cover"
           />
-          
-          {/* Uploading overlay */}
+
           {uploading && (
             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center">
               <Loader2 className="w-8 h-8 text-white animate-spin mb-2" />
               <div className="w-3/4 h-2 bg-white/30 rounded-full overflow-hidden">
-                <div 
-                   className="h-full bg-black transition-all duration-300"
+                <div
+                  className="h-full bg-black transition-all duration-300"
                   style={{ width: `${progress?.percent || 0}%` }}
                 />
               </div>
@@ -107,14 +142,12 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             </div>
           )}
 
-          {/* Success indicator */}
           {!uploading && value && !previewUrl && (
             <div className="absolute top-2 right-2 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
               <Check className="w-4 h-4 text-white" />
             </div>
           )}
 
-          {/* Actions */}
           {!uploading && (
             <div className="absolute bottom-2 right-2 flex gap-2">
               <button
@@ -160,9 +193,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
         </button>
       )}
 
-      {error && (
-        <p className="text-sm text-red-500 mt-2">{error}</p>
-      )}
+      {error && <p className="text-sm text-red-500 mt-2">{error}</p>}
     </div>
   );
 };

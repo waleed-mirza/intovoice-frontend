@@ -3,6 +3,12 @@
  * Centralised here to avoid duplication across pages and components.
  */
 
+/** Width:height ratio for station cover photos (matches station page header). */
+export const STATION_BANNER_ASPECT = 3;
+
+/** Recommended upload size label for station banners. */
+export const STATION_BANNER_SIZE_LABEL = "1500×500";
+
 export const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);

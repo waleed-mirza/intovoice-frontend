@@ -14,11 +14,45 @@ interface Category {
   slug: string;
 }
 
+const nameToHandle = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "")
+    .substring(0, 30);
+
+const checkHandleAvailability = async (handle: string): Promise<boolean> => {
+  const res = await Api.get(`/voice/station/check-handle/${handle}`);
+  return res.data.available;
+};
+
+const findAvailableHandle = async (
+  baseHandle: string
+): Promise<{ handle: string; available: boolean }> => {
+  if (baseHandle.length < 3) {
+    return { handle: baseHandle, available: false };
+  }
+
+  if (await checkHandleAvailability(baseHandle)) {
+    return { handle: baseHandle, available: true };
+  }
+
+  for (let i = 1; i <= 99; i++) {
+    const suffix = String(i);
+    const candidate = `${baseHandle.substring(0, 30 - suffix.length)}${suffix}`;
+    if (await checkHandleAvailability(candidate)) {
+      return { handle: candidate, available: true };
+    }
+  }
+
+  return { handle: baseHandle, available: false };
+};
+
 export default function CreateStationPage() {
   const router = useRouter();
   const { user, userLoading } = useAuth();
   const [name, setName] = useState("");
   const [handle, setHandle] = useState("");
+  const [handleManuallyEdited, setHandleManuallyEdited] = useState(false);
   const [description, setDescription] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [avatarURL, setAvatarURL] = useState("");
@@ -42,40 +76,69 @@ export default function CreateStationPage() {
   }, [user, userLoading]);
 
   useEffect(() => {
-    if (name && !handle) {
-      setHandle(
-        name
-          .toLowerCase()
-          .replace(/[^a-z0-9\s-]/g, "")
-          .replace(/\s+/g, "-")
-          .substring(0, 30)
-      );
+    if (handleManuallyEdited) return;
+
+    if (!name) {
+      setHandle("");
+      setHandleAvailable(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name]);
+
+    const baseHandle = nameToHandle(name);
+    setHandle(baseHandle);
+
+    if (baseHandle.length < 3) {
+      setHandleAvailable(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingHandle(true);
+        const result = await findAvailableHandle(baseHandle);
+        if (!cancelled && nameToHandle(name) === baseHandle) {
+          setHandle(result.handle);
+          setHandleAvailable(result.available);
+        }
+      } catch {
+        if (!cancelled) setHandleAvailable(null);
+      } finally {
+        if (!cancelled) setCheckingHandle(false);
+      }
+    }, 500);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [name, handleManuallyEdited]);
 
   useEffect(() => {
+    if (!handleManuallyEdited) return;
+
     if (!handle) {
       setHandleAvailable(null);
       return;
     }
+
     const timer = setTimeout(async () => {
-      if (!handle || handle.length < 3) {
+      if (handle.length < 3) {
         setHandleAvailable(null);
         return;
       }
       try {
         setCheckingHandle(true);
-        const res = await Api.get(`/voice/station/check-handle/${handle}`);
-        setHandleAvailable(res.data.available);
+        setHandleAvailable(await checkHandleAvailability(handle));
       } catch {
         setHandleAvailable(null);
       } finally {
         setCheckingHandle(false);
       }
     }, 500);
+
     return () => clearTimeout(timer);
-  }, [handle]);
+  }, [handle, handleManuallyEdited]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -156,10 +219,11 @@ export default function CreateStationPage() {
             <input
               type="text"
               value={handle}
-              onChange={(e) =>
-                setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""))
-              }
-              placeholder="my-station"
+              onChange={(e) => {
+                setHandleManuallyEdited(true);
+                setHandle(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""));
+              }}
+              placeholder="mystation"
               maxLength={30}
               className={`w-full pl-8 pr-12 py-3 border rounded-lg focus:outline-none focus:ring-2 ${
                 handleAvailable === true
@@ -180,6 +244,14 @@ export default function CreateStationPage() {
               )}
             </div>
           </div>
+          {!handleManuallyEdited &&
+            handleAvailable === true &&
+            handle &&
+            handle !== nameToHandle(name) && (
+              <p className="text-sm text-green-600 mt-1">
+                @{handle} is available
+              </p>
+            )}
           {handleAvailable === false && (
             <p className="text-sm text-red-500 mt-1">This handle is already taken</p>
           )}

@@ -76,12 +76,48 @@ interface Comment {
   createdAt: string;
   likeCount: number;
   isLiked: boolean;
+  parentId?: string | null;
+  replyCount?: number;
+  replies?: Comment[];
   author: {
     id: string;
     name: string;
     profileImg?: string;
     username?: string;
   };
+}
+
+function updateCommentInTree(
+  comments: Comment[],
+  commentId: string,
+  patch: Partial<Pick<Comment, "isLiked" | "likeCount">>
+): Comment[] {
+  return comments.map((c) => {
+    if (c.id === commentId) {
+      return { ...c, ...patch };
+    }
+    if (c.replies?.some((r) => r.id === commentId)) {
+      return {
+        ...c,
+        replies: c.replies.map((r) => (r.id === commentId ? { ...r, ...patch } : r)),
+      };
+    }
+    return c;
+  });
+}
+
+function removeCommentFromTree(comments: Comment[], commentId: string): Comment[] {
+  return comments
+    .filter((c) => c.id !== commentId)
+    .map((c) => {
+      const hadReply = c.replies?.some((r) => r.id === commentId);
+      if (!hadReply) return c;
+      return {
+        ...c,
+        replies: c.replies!.filter((r) => r.id !== commentId),
+        replyCount: Math.max(0, (c.replyCount ?? c.replies!.length) - 1),
+      };
+    });
 }
 
 // ─── Compact Audio Player for voice comments ──────────────────────────────────
@@ -226,20 +262,61 @@ const CommentAudioPlayer = ({ src }: { src: string }) => {
   );
 };
 
+// ─── Comment action button ────────────────────────────────────────────────────
+
+const CommentActionButton = ({
+  onClick,
+  disabled,
+  active,
+  danger,
+  title,
+  ariaLabel,
+  children,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  active?: boolean;
+  danger?: boolean;
+  title?: string;
+  ariaLabel?: string;
+  children: React.ReactNode;
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
+    aria-label={ariaLabel}
+    className={`inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none ${
+      active
+        ? "bg-gray-100 text-gray-900"
+        : danger
+        ? "text-gray-500 hover:bg-red-50 hover:text-red-600"
+        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+    }`}
+  >
+    {children}
+  </button>
+);
+
 // ─── Comment Card ─────────────────────────────────────────────────────────────
 
 const CommentCard = ({
   comment,
   currentUserId,
   stationOwnerId,
+  isReply,
   onLike,
   onDelete,
+  onReply,
 }: {
   comment: Comment;
   currentUserId?: string;
   stationOwnerId?: string;
+  isReply?: boolean;
   onLike: (id: string) => void;
   onDelete: (id: string) => void;
+  onReply?: () => void;
 }) => {
   const isOwn = currentUserId === comment.author.id;
   const canDelete = currentUserId === comment.author.id || currentUserId === stationOwnerId;
@@ -259,7 +336,7 @@ const CommentCard = ({
     : null;
 
   return (
-    <div className="flex gap-3">
+    <div className={`flex gap-3 ${isReply ? "ml-8 sm:ml-10 pl-3 border-l border-gray-200" : ""}`}>
       {/* Avatar */}
       <div className="flex-shrink-0">
         {comment.author.profileImg ? (
@@ -301,41 +378,62 @@ const CommentCard = ({
         {/* Voice comment audio player */}
         {audioSrc && <CommentAudioPlayer src={audioSrc} />}
 
-        {/* Actions row */}
-        <div className="flex items-center gap-3 mt-2">
-          <button
-            onClick={() => onLike(comment.id)}
-            className={`flex items-center gap-1 text-xs transition-colors ${
-              comment.isLiked ? "text-gray-900" : "text-gray-400 hover:text-gray-900"
-            }`}
-          >
-            <ThumbsUp className={`w-3.5 h-3.5 ${comment.isLiked ? "fill-current" : ""}`} />
-            {comment.likeCount > 0 && <span>{comment.likeCount}</span>}
-          </button>
-
-          {canDelete && (
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
-              title="Delete comment"
+        {/* Actions row — primary left, moderation right */}
+        <div className="flex items-center justify-between gap-2 mt-3 pt-0.5">
+          <div className="flex items-center gap-0.5">
+            <CommentActionButton
+              onClick={() => onLike(comment.id)}
+              active={comment.isLiked}
+              ariaLabel={comment.isLiked ? "Unlike comment" : "Like comment"}
+              title={comment.isLiked ? "Unlike" : "Like"}
             >
-              {deleting ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="w-3.5 h-3.5" />
+              <ThumbsUp className={`w-3.5 h-3.5 ${comment.isLiked ? "fill-current" : ""}`} />
+              {comment.likeCount > 0 && <span>{comment.likeCount}</span>}
+            </CommentActionButton>
+
+            {onReply && (
+              <CommentActionButton
+                onClick={onReply}
+                ariaLabel="Reply to comment"
+                title="Reply"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Reply</span>
+              </CommentActionButton>
+            )}
+          </div>
+
+          {(canDelete || canReport) && (
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {canDelete && (
+                <CommentActionButton
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  danger
+                  ariaLabel="Delete comment"
+                  title="Delete comment"
+                >
+                  {deleting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-3.5 h-3.5" />
+                  )}
+                  <span className="hidden sm:inline">Delete</span>
+                </CommentActionButton>
               )}
-            </button>
-          )}
 
-          {canReport && (
-            <button
-              onClick={() => setReportOpen(true)}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-red-500 transition-colors"
-              title="Report comment"
-            >
-              <ReportFlagIcon className="w-3.5 h-3.5" />
-            </button>
+              {canReport && (
+                <CommentActionButton
+                  onClick={() => setReportOpen(true)}
+                  danger
+                  ariaLabel="Report comment"
+                  title="Report comment"
+                >
+                  <ReportFlagIcon className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Report</span>
+                </CommentActionButton>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -377,6 +475,12 @@ const PostPage = () => {
   const [liking, setLiking] = useState(false);
   const [subscribing, setSubscribing] = useState(false);
   const [newComment, setNewComment] = useState("");
+  const [replyingTo, setReplyingTo] = useState<{
+    threadRootId: string;
+    targetAuthorName: string;
+  } | null>(null);
+  const [loadingRepliesFor, setLoadingRepliesFor] = useState<Set<string>>(new Set());
+  const commentInputRef = useRef<HTMLDivElement>(null);
 
   // ── Local player state (single post source of truth) ──
   const [isPlaying, setIsPlaying] = useState(false);
@@ -416,17 +520,10 @@ const PostPage = () => {
     onPermissionDenied: () => console.warn("Microphone permission denied"),
   });
 
-  const { isSending, submitComment } = useVoiceCommentSubmit({
+  const { isSending, submitComment } = useVoiceCommentSubmit<Comment>({
     postId: id,
+    parentId: replyingTo?.threadRootId ?? null,
     maxRecordingSeconds: MAX_RECORDING_SECONDS,
-    onSuccess: (comment: Comment) => {
-      setComments((prev) => [comment, ...prev]);
-      if (post) {
-        setPost((prev) =>
-          prev ? { ...prev, _count: { comments: prev._count.comments + 1 } } : null
-        );
-      }
-    },
   });
 
   // ── Load post ──
@@ -578,6 +675,7 @@ const PostPage = () => {
     if (!user) { router.push("/auth/login"); return; }
     if (isSending) return;
 
+    const activeReply = replyingTo;
     const result = await submitComment({
       text: newComment,
       recordedBlob,
@@ -588,8 +686,62 @@ const PostPage = () => {
     });
 
     if (result) {
+      if (activeReply) {
+        setComments((prev) =>
+          prev.map((c) =>
+            c.id === activeReply.threadRootId
+              ? {
+                  ...c,
+                  replies: [...(c.replies || []), { ...result, replies: [] }],
+                  replyCount: (c.replyCount ?? c.replies?.length ?? 0) + 1,
+                }
+              : c
+          )
+        );
+      } else {
+        setComments((prev) => [{ ...result, replies: result.replies ?? [] }, ...prev]);
+      }
+      setPost((prev) =>
+        prev ? { ...prev, _count: { comments: prev._count.comments + 1 } } : null
+      );
+      setReplyingTo(null);
       setNewComment("");
       resetAudioState();
+    }
+  };
+
+  const handleStartReply = useCallback(
+    (threadRootId: string, targetAuthorName: string) => {
+      if (userLoading) return;
+      if (!user) { router.push("/auth/login"); return; }
+      setReplyingTo({ threadRootId, targetAuthorName });
+      commentInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    [user, userLoading, router]
+  );
+
+  const handleLoadMoreReplies = async (commentId: string) => {
+    const comment = comments.find((c) => c.id === commentId);
+    if (!comment || loadingRepliesFor.has(commentId)) return;
+
+    setLoadingRepliesFor((prev) => new Set(prev).add(commentId));
+    try {
+      const limit = Math.min(comment.replyCount ?? 50, 50);
+      const res = await Api.get(`/voice/comment/${commentId}/replies`, {
+        params: { page: 1, limit },
+      });
+      const allReplies: Comment[] = res.data.result || [];
+      setComments((prev) =>
+        prev.map((c) => (c.id === commentId ? { ...c, replies: allReplies } : c))
+      );
+    } catch (err) {
+      console.error("Failed to load replies:", err);
+    } finally {
+      setLoadingRepliesFor((prev) => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
     }
   };
 
@@ -599,11 +751,10 @@ const PostPage = () => {
     try {
       const res = await Api.post(`/voice/comment/${commentId}/like`);
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId
-            ? { ...c, isLiked: res.data.result.isLiked, likeCount: res.data.result.likeCount }
-            : c
-        )
+        updateCommentInTree(prev, commentId, {
+          isLiked: res.data.result.isLiked,
+          likeCount: res.data.result.likeCount,
+        })
       );
     } catch (err) {
       console.error("Failed to like comment:", err);
@@ -613,7 +764,7 @@ const PostPage = () => {
   const handleDeleteComment = useCallback(async (commentId: string) => {
     try {
       await Api.delete(`/voice/comment/${commentId}`);
-      setComments((prev) => prev.filter((c) => c.id !== commentId));
+      setComments((prev) => removeCommentFromTree(prev, commentId));
       setPost((prev) =>
         prev ? { ...prev, _count: { comments: Math.max(0, prev._count.comments - 1) } } : null
       );
@@ -864,7 +1015,29 @@ const PostPage = () => {
 
             {/* Comment Input */}
             {user ? (
-              <div className="bg-gray-50 rounded-2xl p-3 mb-6 border border-gray-200">
+              <div
+                ref={commentInputRef}
+                className={`bg-gray-50 rounded-2xl p-3 mb-6 border transition-colors ${
+                  replyingTo ? "border-gray-400 ring-1 ring-gray-300" : "border-gray-200"
+                }`}
+              >
+                {replyingTo && (
+                  <div className="flex items-center justify-between gap-2 mb-2 px-1">
+                    <p className="text-xs text-gray-600">
+                      Replying to{" "}
+                      <span className="font-semibold text-gray-900">
+                        {replyingTo.targetAuthorName}
+                      </span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(null)}
+                      className="text-xs text-gray-500 hover:text-gray-900 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
                 {/* WhatsApp-style input bar */}
                 <div className="flex items-end gap-2">
                   {/* User avatar */}
@@ -900,6 +1073,8 @@ const PostPage = () => {
                           ? "Recording…"
                           : recordedBlob
                           ? "Audio recorded — clear to type"
+                          : replyingTo
+                          ? `Reply to ${replyingTo.targetAuthorName}…`
                           : "Add a comment…"
                       }
                       className={`w-full px-4 py-2 rounded-full text-sm border transition-all focus:outline-none focus:ring-2 focus:ring-gray-400 ${
@@ -1069,14 +1244,57 @@ const PostPage = () => {
                 </div>
               ) : (
                 comments.map((comment) => (
-                  <CommentCard
-                    key={comment.id}
-                    comment={comment}
-                    currentUserId={user?.id}
-                    stationOwnerId={post.station.user.id}
-                    onLike={handleCommentLike}
-                    onDelete={handleDeleteComment}
-                  />
+                  <div key={comment.id} className="space-y-3">
+                    <CommentCard
+                      comment={comment}
+                      currentUserId={user?.id}
+                      stationOwnerId={post.station.user.id}
+                      onLike={handleCommentLike}
+                      onDelete={handleDeleteComment}
+                      onReply={
+                        user
+                          ? () => handleStartReply(comment.id, comment.author.name)
+                          : undefined
+                      }
+                    />
+                    {(comment.replies ?? []).map((reply) => (
+                      <CommentCard
+                        key={reply.id}
+                        comment={reply}
+                        isReply
+                        currentUserId={user?.id}
+                        stationOwnerId={post.station.user.id}
+                        onLike={handleCommentLike}
+                        onDelete={handleDeleteComment}
+                        onReply={
+                          user
+                            ? () => handleStartReply(comment.id, reply.author.name)
+                            : undefined
+                        }
+                      />
+                    ))}
+                    {(comment.replyCount ?? 0) > (comment.replies?.length ?? 0) && (
+                      <button
+                        type="button"
+                        onClick={() => handleLoadMoreReplies(comment.id)}
+                        disabled={loadingRepliesFor.has(comment.id)}
+                        className="ml-8 sm:ml-10 pl-3 text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors disabled:opacity-50"
+                      >
+                        {loadingRepliesFor.has(comment.id) ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Loading replies…
+                          </span>
+                        ) : (
+                          `View ${(comment.replyCount ?? 0) - (comment.replies?.length ?? 0)} more ${
+                            (comment.replyCount ?? 0) - (comment.replies?.length ?? 0) === 1
+                              ? "reply"
+                              : "replies"
+                          }`
+                        )}
+                      </button>
+                    )}
+                  </div>
                 ))
               )}
             </div>

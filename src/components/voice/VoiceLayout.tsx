@@ -15,9 +15,12 @@ import {
   ChevronDown,
   ChevronUp,
   Bell,
+  Settings,
+  Loader2,
 } from "@/components/voice/VoiceIcons";
 import { useAuth } from "@/providers/AuthProvider";
 import Api from "@/lib/axios";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 
 interface SubscribedStation {
   id: string;
@@ -31,13 +34,15 @@ interface VoiceLayoutProps {
   showBackButton?: boolean;
 }
 
-const MAIN_ROUTES = ["/", "/explore", "/subscriptions", "/my-stations"];
+const MAIN_ROUTES = ["/", "/explore", "/subscriptions", "/my-stations", "/settings"];
 
 const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, userLoading } = useAuth();
+  const { user, userLoading, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [subscribedStations, setSubscribedStations] = useState<SubscribedStation[]>([]);
   const [showAllSubscriptions, setShowAllSubscriptions] = useState(false);
@@ -54,6 +59,34 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
         .catch(() => setSubscribedStations([]));
     }
   }, [user]);
+
+  useEffect(() => {
+    setProfileMenuOpen(false);
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    setProfileMenuOpen(false);
+    setLoggingOut(true);
+    try {
+      await logout();
+      router.push("/");
+    } finally {
+      setLoggingOut(false);
+    }
+  };
+
+  const renderProfileAvatar = () =>
+    user?.profileImg ? (
+      <img
+        src={resolveVoiceAssetUrl(user.profileImg)}
+        alt={user.name}
+        className="w-8 h-8 rounded-full object-cover"
+      />
+    ) : (
+      <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+        <User className="w-5 h-5 text-gray-500" />
+      </div>
+    );
 
   const displayedStations = showAllSubscriptions
     ? subscribedStations
@@ -123,6 +156,30 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
             </button>
           )}
 
+          {user && (
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 hover:bg-gray-100 rounded-full lg:hidden"
+              aria-label="Open navigation menu"
+            >
+              <svg
+                className="w-5 h-5 text-gray-700"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            </button>
+          )}
+
           <Link href="/" className="flex items-center gap-2">
             <img
               src="/intovoice_logo.png"
@@ -168,42 +225,62 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
           {userLoading ? (
             <div className="w-8 h-8 bg-gray-200 rounded-full animate-pulse" />
           ) : user ? (
-            <>
+            <div className="relative">
               <button
-                onClick={() => router.push("/my-stations")}
-                className="p-2 hover:bg-gray-100 rounded-full hidden lg:flex items-center justify-center"
+                type="button"
+                onClick={() => setProfileMenuOpen((open) => !open)}
+                className="p-2 hover:bg-gray-100 rounded-full flex items-center justify-center"
+                aria-label="Account menu"
+                aria-expanded={profileMenuOpen}
               >
-                {user.profileImg ? (
-                  <img
-                    src={`${process.env.NEXT_PUBLIC_AWS_POST_FILE}/${user.profileImg}`}
-                    alt={user.name}
-                    className="w-8 h-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-gray-500" />
-                  </div>
-                )}
+                {renderProfileAvatar()}
               </button>
-              <button
-                onClick={() => setSidebarOpen(!sidebarOpen)}
-                className="p-2 hover:bg-gray-100 rounded-full lg:hidden"
-              >
-                {user.profileImg ? (
-                  <Image
-                    src={`${process.env.NEXT_PUBLIC_AWS_POST_FILE}/${user.profileImg}`}
-                    alt={user.name}
-                    width={32}
-                    height={32}
-                    className="w-8 h-8 rounded-full object-cover"
+
+              {profileMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-[60]"
+                    onClick={() => setProfileMenuOpen(false)}
                   />
-                ) : (
-                  <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-gray-500" />
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[70]">
+                    <Link
+                      href="/settings"
+                      className="flex items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+                      onClick={() => setProfileMenuOpen(false)}
+                    >
+                      <User className="w-4 h-4" />
+                      Profile
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      disabled={loggingOut}
+                      className="flex items-center gap-2 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {loggingOut ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h6a2 2 0 012 2v1"
+                          />
+                        </svg>
+                      )}
+                      Logout
+                    </button>
                   </div>
-                )}
-              </button>
-            </>
+                </>
+              )}
+            </div>
           ) : (
             <button
               onClick={() => router.push("/auth/login?redirect=/")}
@@ -263,6 +340,19 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
 
           {user && (
             <>
+              <Link
+                href="/settings"
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                  isActive("/settings")
+                    ? "bg-gray-900 text-white"
+                    : "hover:bg-gray-100 text-gray-700"
+                }`}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <Settings className="w-5 h-5" />
+                <span className="font-medium">Account Settings</span>
+              </Link>
+
               <Link
                 href="/my-stations"
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${

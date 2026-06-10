@@ -4,6 +4,7 @@ import Api from "@/lib/axios";
 
 interface UseVoiceCommentSubmitOptions<T = unknown> {
   postId?: string;
+  parentId?: string | null;
   maxRecordingSeconds: number;
   onSuccess?: (comment: T) => void;
 }
@@ -19,6 +20,7 @@ interface SubmitArgs {
 
 const useVoiceCommentSubmit = <T = unknown>({
   postId,
+  parentId,
   maxRecordingSeconds,
   onSuccess,
 }: UseVoiceCommentSubmitOptions<T>) => {
@@ -85,6 +87,7 @@ const useVoiceCommentSubmit = <T = unknown>({
       const res = await Api.post(`/voice/comment/post/${postId}`, {
         content: trimmedText,
         audioFileURL,
+        ...(parentId ? { parentId } : {}),
       });
 
       if (onSuccess) onSuccess(res.data.result);

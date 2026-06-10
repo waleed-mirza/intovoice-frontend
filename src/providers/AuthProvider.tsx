@@ -24,6 +24,7 @@ type AuthContextValue = {
   userLoading: boolean;
   setUser: (user: AuthUser | null) => void;
   verifyAuth: () => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -44,12 +45,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const logout = useCallback(async () => {
+    try {
+      await Api.post("/auth/logout");
+    } catch {
+      // Clear local session even if the request fails
+    } finally {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("auth_token");
+      }
+      setUser(null);
+    }
+  }, []);
+
   useEffect(() => {
     verifyAuth();
   }, [verifyAuth]);
 
   return (
-    <AuthContext.Provider value={{ user, userLoading, setUser, verifyAuth }}>
+    <AuthContext.Provider value={{ user, userLoading, setUser, verifyAuth, logout }}>
       <NotificationProvider user={user}>{children}</NotificationProvider>
     </AuthContext.Provider>
   );
