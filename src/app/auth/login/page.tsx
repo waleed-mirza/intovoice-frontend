@@ -71,7 +71,7 @@ function LoginFormContent() {
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <Image
-              src="/intoVoice.png"
+              src="/intovoice_logo.png"
               alt="Into Voice"
               width={80}
               height={80}

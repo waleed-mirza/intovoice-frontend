@@ -65,7 +65,7 @@ const useVoiceCommentSubmit = <T = unknown>({
           },
         });
 
-        const { signedUrl, key } = signedUrlRes.data;
+        const { signedUrl, fileUrl } = signedUrlRes.data;
 
         // Step 2: Upload blob directly to S3
         await axios.put(signedUrl, blobToSend, {
@@ -74,7 +74,7 @@ const useVoiceCommentSubmit = <T = unknown>({
           },
         });
 
-        audioFileURL = key; // Store the S3 key
+        audioFileURL = fileUrl;
       }
 
       if (!trimmedText && !audioFileURL) {

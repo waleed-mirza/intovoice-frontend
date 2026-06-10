@@ -125,7 +125,7 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
 
           <Link href="/" className="flex items-center gap-2">
             <img
-              src="/intoVoice.png"
+              src="/intovoice_logo.png"
               alt="Into Voice"
               className="h-8 w-auto object-contain sm:h-10 lg:h-12"
             />
