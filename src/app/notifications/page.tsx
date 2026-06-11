@@ -24,6 +24,7 @@ const VOICE_TYPES = [
   "voice_new_post",
   "voice_like",
   "voice_comment",
+  "voice_live",
 ] as const;
 
 type VoiceNotificationType = (typeof VOICE_TYPES)[number];
@@ -106,6 +107,8 @@ export default function NotificationsPage() {
         return <FaHeart className="text-purple-500" size={16} />;
       case "voice_comment":
         return <FaComment className="text-purple-500" size={16} />;
+      case "voice_live":
+        return <FaPodcast className="text-gray-700" size={16} />;
       default:
         return <BsBell className="text-gray-500" size={16} />;
     }
@@ -121,6 +124,8 @@ export default function NotificationsPage() {
         return "liked your voice post";
       case "voice_comment":
         return "commented on your voice post";
+      case "voice_live":
+        return "is live";
       default:
         return "sent you a notification";
     }
@@ -135,6 +140,14 @@ export default function NotificationsPage() {
       case "voice_like":
       case "voice_comment":
         return `/post/${notification.content}`;
+      case "voice_live": {
+        try {
+          const parsed = JSON.parse(notification.content);
+          return parsed.liveStreamId ? `/live/${parsed.liveStreamId}` : null;
+        } catch {
+          return null;
+        }
+      }
       default:
         return null;
     }
@@ -148,6 +161,8 @@ export default function NotificationsPage() {
       case "voice_like":
       case "voice_comment":
         return "Listen";
+      case "voice_live":
+        return "Join live";
       default:
         return "View";
     }
@@ -244,6 +259,7 @@ export default function NotificationsPage() {
                 <option value="voice_new_post">Voice New Posts</option>
                 <option value="voice_like">Voice Likes</option>
                 <option value="voice_comment">Voice Comments</option>
+                <option value="voice_live">Live broadcasts</option>
               </select>
 
               <div className="flex gap-2">

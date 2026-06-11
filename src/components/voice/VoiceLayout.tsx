@@ -34,7 +34,7 @@ interface VoiceLayoutProps {
   showBackButton?: boolean;
 }
 
-const MAIN_ROUTES = ["/", "/explore", "/subscriptions", "/my-stations", "/settings"];
+const MAIN_ROUTES = ["/", "/live", "/explore", "/subscriptions", "/my-stations", "/settings"];
 
 const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
   const router = useRouter();
@@ -129,6 +129,7 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
 
   const navItems = [
     { href: "/", icon: Home, label: "Home" },
+    { href: "/live", icon: Radio, label: "Live" },
     { href: "/explore", icon: Compass, label: "Explore" },
   ];
 
