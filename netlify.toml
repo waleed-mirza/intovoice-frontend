@@ -1,5 +1,6 @@
 [build]
   command = "npm run build"
+  # Repo root is the Next.js app — leave base empty in Netlify UI (not "frontend").
 
 [build.environment]
   NODE_VERSION = "20"

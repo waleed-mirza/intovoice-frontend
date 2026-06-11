@@ -10,15 +10,6 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ["zego-express-engine-webrtc"],
   },
-  webpack: (config, { isServer }) => {
-    if (isServer) {
-      config.externals = [
-        ...(Array.isArray(config.externals) ? config.externals : []),
-        "zego-express-engine-webrtc",
-      ];
-    }
-    return config;
-  },
 };
 
 export default nextConfig;
