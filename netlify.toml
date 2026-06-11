@@ -5,6 +5,9 @@
 [build.environment]
   NODE_VERSION = "20"
   NODE_OPTIONS = "--max-old-space-size=4096"
+  # Netlify sets NODE_ENV=production during install, which skips devDependencies.
+  # Next.js needs typescript, tailwind, postcss, eslint from devDependencies to build.
+  NPM_CONFIG_PRODUCTION = "false"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
