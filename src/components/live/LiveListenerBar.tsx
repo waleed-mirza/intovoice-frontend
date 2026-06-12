@@ -2,14 +2,19 @@
 
 import React from "react";
 import { useRouter } from "next/navigation";
-import { Volume2 } from "@/components/voice/VoiceIcons";
+import { Volume2, VolumeX } from "@/components/voice/VoiceIcons";
 
 interface LiveListenerBarProps {
+  isVolumeMuted: boolean;
   onToggleVolume: () => void;
   onLeave: () => void;
 }
 
-const LiveListenerBar = ({ onToggleVolume, onLeave }: LiveListenerBarProps) => {
+const LiveListenerBar = ({
+  isVolumeMuted,
+  onToggleVolume,
+  onLeave,
+}: LiveListenerBarProps) => {
   const router = useRouter();
 
   const handleLeave = () => {
@@ -22,10 +27,20 @@ const LiveListenerBar = ({ onToggleVolume, onLeave }: LiveListenerBarProps) => {
       <button
         type="button"
         onClick={onToggleVolume}
-        className="flex items-center gap-2 px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors text-sm"
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm ${
+          isVolumeMuted
+            ? "bg-gray-200 text-gray-600 hover:bg-gray-300"
+            : "text-gray-700 hover:bg-gray-100"
+        }`}
+        aria-label={isVolumeMuted ? "Unmute audio" : "Mute audio"}
+        aria-pressed={isVolumeMuted}
       >
-        <Volume2 className="w-4 h-4" />
-        Toggle volume
+        {isVolumeMuted ? (
+          <VolumeX className="w-4 h-4" />
+        ) : (
+          <Volume2 className="w-4 h-4" />
+        )}
+        {isVolumeMuted ? "Muted" : "Volume on"}
       </button>
       <button
         type="button"

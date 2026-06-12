@@ -7,19 +7,18 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useVoiceUpload } from "@/hooks/useVoiceUpload";
 import { formatDuration } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
   Loader2,
-  Upload,
   Music,
   ImageIcon,
   Clock,
   AlertCircle,
   CheckCircle,
-  X,
   Save,
 } from "@/components/voice/VoiceIcons";
 
-const MAX_DURATION = 3600;
+const MAX_DURATION = 29 * 60;
 const MAX_AUDIO_SIZE = 500 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
@@ -86,21 +85,24 @@ export default function EditPostPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user, userLoading]);
 
-  const handleThumbnailSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_IMAGE_SIZE) {
-      setError("Thumbnail must be less than 10MB");
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
-      return;
-    }
+  const handleThumbnailSelect = (file: File, previewUrl: string) => {
+    setThumbnailPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return previewUrl;
+    });
     setThumbnailFile(file);
-    setThumbnailPreview(URL.createObjectURL(file));
     setNewThumbnailURL("");
     setError(null);
+  };
+
+  const clearThumbnail = () => {
+    setThumbnailPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return "";
+    });
+    setThumbnailFile(null);
+    setNewThumbnailURL("");
+    thumbnailUpload.reset();
   };
 
   const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,40 +244,24 @@ export default function EditPostPage() {
               <ImageIcon className="w-4 h-4 inline mr-1" />
               Thumbnail
             </label>
-            {!thumbnailFile && (
-              <div className="mb-3">
+            {!thumbnailFile && post && (
+              <div className="mb-3 w-full max-w-md aspect-video rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={resolveVoiceAssetUrl(post.thumbnailURL)}
                   alt="Current thumbnail"
-                  className="w-full max-w-md h-auto rounded-lg border border-gray-200"
+                  className="w-full h-full object-cover"
                 />
               </div>
             )}
-            {!thumbnailFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50">
-                <Upload className="w-8 h-8 text-gray-400 mb-1" />
-                <span className="text-sm text-gray-500">Replace thumbnail (optional)</span>
-                <input type="file" accept="image/*" onChange={handleThumbnailSelect} className="hidden" />
-              </label>
-            ) : (
-              <div className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={thumbnailPreview} alt="New thumbnail" className="w-full max-w-md h-auto rounded-lg" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setThumbnailFile(null);
-                    setThumbnailPreview("");
-                    setNewThumbnailURL("");
-                    thumbnailUpload.reset();
-                  }}
-                  className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            <ThumbnailPicker
+              previewUrl={thumbnailPreview}
+              onSelect={handleThumbnailSelect}
+              onClear={clearThumbnail}
+              maxSizeBytes={MAX_IMAGE_SIZE}
+              onValidationError={setError}
+              emptyLabel="Replace thumbnail (optional)"
+            />
           </div>
 
           <div>

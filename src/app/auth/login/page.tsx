@@ -7,6 +7,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Api from "@/lib/axios";
 import { useAuth } from "@/providers/AuthProvider";
+import PasswordInput from "@/components/auth/PasswordInput";
 import { Loader2 } from "@/components/voice/VoiceIcons";
 
 type LoginForm = {
@@ -101,13 +102,11 @@ function LoginFormContent() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-            <input
-              type="password"
+            <PasswordInput
               {...register("password", {
                 required: "Password is required",
                 minLength: { value: 6, message: "At least 6 characters" },
               })}
-              className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-400"
               autoComplete="current-password"
             />
             {errors.password && (

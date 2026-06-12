@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Api from "@/lib/axios";
-import type { LiveChatMessage, LiveConnectionState } from "@/types/live";
+import type { LiveChatMessage, LiveConnectionState, LiveRoomListener } from "@/types/live";
 
 type LiveRole = "host" | "audience";
 
@@ -104,8 +104,10 @@ export default function useZegoLive({
   const [connectionState, setConnectionState] =
     useState<LiveConnectionState>("idle");
   const [isMuted, setIsMuted] = useState(false);
+  const [isVolumeMuted, setIsVolumeMuted] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [listenerCount, setListenerCount] = useState(0);
+  const [listeners, setListeners] = useState<LiveRoomListener[]>([]);
   const [messages, setMessages] = useState<LiveChatMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -147,6 +149,8 @@ export default function useZegoLive({
     localStreamRef.current = null;
     joinedRef.current = false;
     setIsPlaying(false);
+    setIsVolumeMuted(false);
+    setListeners([]);
   }, [role, roomId, streamId]);
 
   const sendChat = useCallback(
@@ -201,7 +205,9 @@ export default function useZegoLive({
 
   const toggleVolume = useCallback(() => {
     if (!remoteAudioRef.current) return;
-    remoteAudioRef.current.muted = !remoteAudioRef.current.muted;
+    const next = !remoteAudioRef.current.muted;
+    remoteAudioRef.current.muted = next;
+    setIsVolumeMuted(next);
   }, []);
 
   useEffect(() => {
@@ -239,6 +245,54 @@ export default function useZegoLive({
         zg.on("roomOnlineUserCountUpdate", (...args: unknown[]) => {
           const count = args[1] as number;
           if (typeof count === "number") setListenerCount(count);
+        });
+
+        zg.on("roomUserUpdate", (...args: unknown[]) => {
+          const updateRoomId = args[0] as string;
+          const updateType = args[1] as "DELETE" | "ADD";
+          const userList = args[2] as Array<{
+            userID: string;
+            userName?: string;
+          }>;
+
+          if (updateRoomId !== roomId || !Array.isArray(userList)) return;
+
+          if (
+            updateType === "DELETE" &&
+            role === "audience" &&
+            userList.some((user) => user.userID === hostUserId)
+          ) {
+            if (playingStreamIdRef.current) {
+              zg.stopPlayingStream(playingStreamIdRef.current);
+              playingStreamIdRef.current = null;
+            }
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.pause();
+              remoteAudioRef.current.srcObject = null;
+            }
+            setIsPlaying(false);
+            setConnectionState("ended");
+          }
+
+          setListeners((prev) => {
+            if (updateType === "ADD") {
+              const now = Date.now();
+              const next = [...prev];
+              userList.forEach((user) => {
+                if (user.userID === hostUserId) return;
+                if (next.some((listener) => listener.userId === user.userID)) return;
+                next.push({
+                  userId: user.userID,
+                  name: user.userName?.trim() || "Listener",
+                  joinedAt: now,
+                });
+              });
+              return next.sort((a, b) => a.joinedAt - b.joinedAt);
+            }
+
+            const removedIds = new Set(userList.map((user) => user.userID));
+            return prev.filter((listener) => !removedIds.has(listener.userId));
+          });
         });
 
         zg.on("IMRecvBroadcastMessage", (...args: unknown[]) => {
@@ -302,14 +356,27 @@ export default function useZegoLive({
                 console.error("Play stream failed:", e);
               }
             } else if (updateType === "DELETE") {
+              const hostStreamStopped = streamList.some(
+                (s) =>
+                  playingStreamIdRef.current === s.streamID ||
+                  s.streamID === streamId
+              );
+
               streamList.forEach((s) => {
                 if (playingStreamIdRef.current === s.streamID) {
                   zg.stopPlayingStream(s.streamID);
                   playingStreamIdRef.current = null;
-                  setIsPlaying(false);
-                  setConnectionState("ended");
                 }
               });
+
+              if (hostStreamStopped) {
+                if (remoteAudioRef.current) {
+                  remoteAudioRef.current.pause();
+                  remoteAudioRef.current.srcObject = null;
+                }
+                setIsPlaying(false);
+                setConnectionState("ended");
+              }
             }
           });
         }
@@ -382,10 +449,12 @@ export default function useZegoLive({
     isMuted,
     isPlaying,
     listenerCount,
+    listeners,
     messages,
     error,
     sendChat,
     toggleMute,
+    isVolumeMuted,
     toggleVolume,
     cleanup,
   };

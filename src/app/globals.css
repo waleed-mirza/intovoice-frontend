@@ -38,6 +38,28 @@ body {
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
   }
+
+  .live-chat-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #d1d5db transparent;
+  }
+
+  .live-chat-scroll::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .live-chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .live-chat-scroll::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 9999px;
+  }
+
+  .live-chat-scroll::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+  }
 }
 
 @keyframes voiceCommentPulse {

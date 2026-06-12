@@ -20,6 +20,7 @@ interface UseVoiceRecorderSubmitState {
   recordedPreviewUrl: string | null;
   showMaxReachedTooltip: boolean;
   suppressSendSwap: boolean;
+  startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
   discardVoice: () => Promise<void>;
   onStopLockedRecording: () => Promise<void>;
@@ -65,6 +66,8 @@ const useVoiceRecorder = (
   const holdStartTimeoutRef = useRef<any>(null);
   const recorderSessionRef = useRef(0);
   const recordingTimerRef = useRef<any>(null);
+  const maxDurationTimeoutRef = useRef<any>(null);
+  const recordingStartedAtRef = useRef(0);
   const discardNextStopRef = useRef(false);
   const lockProgressRef = useRef(0);
   const lockedAtRef = useRef<number | null>(null);
@@ -87,12 +90,20 @@ const useVoiceRecorder = (
     setTimeout(() => setShowMaxReachedTooltip(false), 2000);
   }, []);
 
+  const clearRecordingTimers = useCallback(() => {
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (maxDurationTimeoutRef.current) {
+      clearTimeout(maxDurationTimeoutRef.current);
+      maxDurationTimeoutRef.current = null;
+    }
+  }, []);
+
   const resetAudioState = useCallback(
     (options?: { keepGesture?: boolean; keepIgnore?: boolean }) => {
-      if (recordingTimerRef.current) {
-        clearInterval(recordingTimerRef.current);
-        recordingTimerRef.current = null;
-      }
+      clearRecordingTimers();
       if (holdStartTimeoutRef.current) {
         clearTimeout(holdStartTimeoutRef.current);
         holdStartTimeoutRef.current = null;
@@ -129,7 +140,7 @@ const useVoiceRecorder = (
         return null;
       });
     },
-    []
+    [clearRecordingTimers]
   );
 
   const lockRecording = useCallback(() => {
@@ -153,6 +164,7 @@ const useVoiceRecorder = (
         return;
       }
 
+      clearRecordingTimers();
       stopResolveRef.current = resolve;
       try {
         activeRecorder.stop();
@@ -163,7 +175,7 @@ const useVoiceRecorder = (
         resolve(recordedBlob);
       }
     });
-  }, [isRecording, recordedBlob]);
+  }, [clearRecordingTimers, isRecording, recordedBlob]);
 
   const startRecording = useCallback(async () => {
     if (isRecording) return;
@@ -228,10 +240,13 @@ const useVoiceRecorder = (
         setIsRecording(false);
         setIsLocked(false);
 
-        if (recordingTimerRef.current) {
-          clearInterval(recordingTimerRef.current);
-          recordingTimerRef.current = null;
-        }
+        clearRecordingTimers();
+
+        const finalSeconds = Math.min(
+          maxSeconds,
+          Math.max(1, Math.floor((performance.now() - recordingStartedAtRef.current) / 1000))
+        );
+        setRecordingSeconds(finalSeconds);
 
         const shouldDiscard = discardNextStopRef.current;
         if (shouldDiscard) {
@@ -253,23 +268,30 @@ const useVoiceRecorder = (
 
       recorder.start(250);
       setIsRecording(true);
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((s: number) => {
-          const next = s + 1;
-          if (next >= maxSeconds) {
-            stopRecording().then(() => {
-              triggerMaxReachedTooltip();
-            });
-            return maxSeconds;
-          }
-          return next;
+      recordingStartedAtRef.current = performance.now();
+
+      const syncRecordingSeconds = () => {
+        const elapsedMs = performance.now() - recordingStartedAtRef.current;
+        const secs = Math.min(maxSeconds, Math.floor(elapsedMs / 1000));
+        setRecordingSeconds(secs);
+      };
+
+      syncRecordingSeconds();
+      recordingTimerRef.current = setInterval(syncRecordingSeconds, 250);
+
+      maxDurationTimeoutRef.current = setTimeout(() => {
+        maxDurationTimeoutRef.current = null;
+        setRecordingSeconds(maxSeconds);
+        stopRecording().then(() => {
+          triggerMaxReachedTooltip();
         });
-      }, 1000);
+      }, maxSeconds * 1000);
     } catch (err: any) {
       if (onPermissionDenied) onPermissionDenied();
       resetAudioState();
     }
   }, [
+    clearRecordingTimers,
     isRecording,
     maxSeconds,
     onPermissionDenied,
@@ -549,6 +571,7 @@ const useVoiceRecorder = (
     recordedPreviewUrl,
     showMaxReachedTooltip,
     suppressSendSwap,
+    startRecording,
     stopRecording,
     discardVoice,
     onStopLockedRecording,

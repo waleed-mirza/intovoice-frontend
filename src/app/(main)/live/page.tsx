@@ -68,6 +68,7 @@ export default function LivePage() {
         refreshing={refreshing}
         hasActiveStream={Boolean(myActive)}
         activeStreamId={myActive?.id}
+        onRefresh={() => loadData(true)}
       />
 
       {streams.length === 0 ? (

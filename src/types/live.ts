@@ -41,3 +41,10 @@ export type LiveConnectionState =
   | "connected"
   | "ended"
   | "error";
+
+export interface LiveRoomListener {
+  userId: string;
+  name: string;
+  joinedAt: number;
+  profileImg?: string | null;
+}

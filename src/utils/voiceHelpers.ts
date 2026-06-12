@@ -9,7 +9,14 @@ export const STATION_BANNER_ASPECT = 3;
 /** Recommended upload size label for station banners. */
 export const STATION_BANNER_SIZE_LABEL = "1500×500";
 
+/** Width:height ratio for voice post thumbnails (matches single post player). */
+export const VOICE_POST_THUMBNAIL_ASPECT = 16 / 9;
+
+/** Recommended upload size label for voice post thumbnails. */
+export const VOICE_POST_THUMBNAIL_SIZE_LABEL = "1280×720";
+
 export const formatDuration = (seconds: number): string => {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);

@@ -454,7 +454,7 @@ const CommentCard = ({
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const MAX_RECORDING_SECONDS = 60;
+const MAX_RECORDING_SECONDS = 59;
 const HOLD_TO_RECORD_MS = 180;
 const LOCK_THRESHOLD_PX = 50;
 
@@ -466,6 +466,8 @@ const PostPage = () => {
   const id = params.id as string;
   const { user, userLoading } = useAuth();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const seekingForDurationRef = useRef(false);
+  const isSeekingRef = useRef(false);
 
   const [post, setPost] = useState<VoicePost | null>(null);
   const [relatedPosts, setRelatedPosts] = useState<VoicePost[]>([]);
@@ -481,6 +483,14 @@ const PostPage = () => {
   } | null>(null);
   const [loadingRepliesFor, setLoadingRepliesFor] = useState<Set<string>>(new Set());
   const commentInputRef = useRef<HTMLDivElement>(null);
+  const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const resizeCommentTextarea = () => {
+    const textarea = commentTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+  };
 
   // ── Local player state (single post source of truth) ──
   const [isPlaying, setIsPlaying] = useState(false);
@@ -554,40 +564,98 @@ const PostPage = () => {
   // ── Audio element wiring ──
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || !post) return;
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMetadata = () => setDuration(audio.duration || 0);
-    const onEnded = () => setIsPlaying(false);
+    const applyDuration = (raw: number) => {
+      if (Number.isFinite(raw) && raw > 0) {
+        setDuration(raw);
+        return true;
+      }
+      return false;
+    };
+
+    const onLoadedMetadata = () => {
+      if (applyDuration(audio.duration)) return;
+      if (post.duration > 0) {
+        setDuration(post.duration);
+        return;
+      }
+      seekingForDurationRef.current = true;
+      audio.currentTime = 1e9;
+    };
+
+    const onDurationChange = () => {
+      if (applyDuration(audio.duration)) {
+        if (seekingForDurationRef.current) {
+          seekingForDurationRef.current = false;
+          audio.currentTime = 0;
+          setCurrentTime(0);
+        }
+        return;
+      }
+      if (post.duration > 0) setDuration(post.duration);
+    };
+
+    const onEnded = () => {
+      setIsPlaying(false);
+      const total = post.duration > 0 ? post.duration : audio.duration;
+      if (Number.isFinite(total) && total > 0) {
+        setCurrentTime(total);
+      }
+    };
     const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
+    const onPause = () => {
+      setIsPlaying(false);
+      if (!seekingForDurationRef.current) {
+        setCurrentTime(audio.currentTime);
+      }
+    };
     const onVolumeChange = () => setIsMuted(audio.muted);
 
-    audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
     audio.addEventListener("volumechange", onVolumeChange);
 
     return () => {
-      audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("durationchange", onDurationChange);
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
       audio.removeEventListener("volumechange", onVolumeChange);
     };
-  }, [post?.id]);
+  }, [post?.id, post?.duration, post?.audioURL]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    let rafId = 0;
+
+    const tick = () => {
+      const audio = audioRef.current;
+      if (audio && !seekingForDurationRef.current && !isSeekingRef.current) {
+        setCurrentTime(audio.currentTime);
+      }
+      if (audio && !audio.paused && !audio.ended) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isPlaying]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !post) return;
     const src = resolveVoiceAssetUrl(post.audioURL);
+    seekingForDurationRef.current = false;
+    setCurrentTime(0);
+    setDuration(post.duration || 0);
     if (audio.src !== src) {
       audio.src = src;
-      setCurrentTime(0);
-      setDuration(0);
     }
     audio.load();
     audio.muted = false;
@@ -596,7 +664,7 @@ const PostPage = () => {
       console.error("PostPage: autoplay failed:", err);
       setIsPlaying(false);
     });
-  }, [post?.id]);
+  }, [post?.id, post?.audioURL, post?.duration]);
 
   // ── Player controls — local audio element ──
   const togglePlay = async () => {
@@ -616,14 +684,35 @@ const PostPage = () => {
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.currentTime = parseFloat(e.target.value);
+    const t = parseFloat(e.target.value);
+    audio.currentTime = t;
+    setCurrentTime(t);
+  };
+
+  const handleSeekStart = () => {
+    isSeekingRef.current = true;
+  };
+
+  const handleSeekEnd = () => {
+    isSeekingRef.current = false;
+    const audio = audioRef.current;
+    if (audio) setCurrentTime(audio.currentTime);
   };
 
   const skip = (seconds: number) => {
     const audio = audioRef.current;
     if (!audio) return;
-    audio.currentTime = Math.max(0, Math.min(duration, currentTime + seconds));
+    const total =
+      Number.isFinite(duration) && duration > 0 ? duration : post?.duration ?? 0;
+    audio.currentTime = Math.max(0, Math.min(total, currentTime + seconds));
   };
+
+  const playerDuration =
+    Number.isFinite(duration) && duration > 0 ? duration : post?.duration ?? 0;
+  const playerCurrentTime =
+    playerDuration > 0 ? Math.min(currentTime, playerDuration) : currentTime;
+  const playerProgress =
+    playerDuration > 0 ? (playerCurrentTime / playerDuration) * 100 : 0;
 
   // ── Post actions ──
   const handleLike = async () => {
@@ -706,6 +795,9 @@ const PostPage = () => {
       );
       setReplyingTo(null);
       setNewComment("");
+      if (commentTextareaRef.current) {
+        commentTextareaRef.current.style.height = "auto";
+      }
       resetAudioState();
     }
   };
@@ -834,18 +926,32 @@ const PostPage = () => {
             </div>
 
             <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-end p-2 sm:p-4 pointer-events-none">
-              <input
-                type="range"
-                min={0}
-                max={duration || 100}
-                value={currentTime}
-                onChange={handleSeek}
+              <div
+                className="relative w-full h-1 mb-2 sm:mb-4 pointer-events-auto"
                 onClick={(e) => e.stopPropagation()}
-                className="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer mb-2 sm:mb-4 pointer-events-auto"
-                style={{
-                  background: voice.playerGradient((currentTime / duration) * 100),
-                }}
-              />
+              >
+                <div className="absolute inset-0 bg-gray-600 rounded-lg" />
+                <div
+                  className="absolute inset-y-0 left-0 rounded-lg pointer-events-none will-change-[width]"
+                  style={{
+                    width: `${playerProgress}%`,
+                    background: voice.fill,
+                  }}
+                />
+                <input
+                  type="range"
+                  min={0}
+                  max={playerDuration || 1}
+                  step={0.01}
+                  value={playerCurrentTime}
+                  onChange={handleSeek}
+                  onMouseDown={handleSeekStart}
+                  onMouseUp={handleSeekEnd}
+                  onTouchStart={handleSeekStart}
+                  onTouchEnd={handleSeekEnd}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer appearance-none"
+                />
+              </div>
               <div className="flex items-center justify-between gap-1 sm:gap-2 pointer-events-auto" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-1 sm:gap-4">
                   <button onClick={() => skip(-10)} className="text-white hover:text-gray-300 p-0.5 sm:p-1">
@@ -865,7 +971,7 @@ const PostPage = () => {
                     <SkipForward className="w-4 h-4 sm:w-5 sm:h-5" />
                   </button>
                   <span className="text-white text-[10px] sm:text-sm tabular-nums whitespace-nowrap">
-                    {formatDuration(currentTime)} / {formatDuration(duration)}
+                    {formatDuration(playerCurrentTime)} / {formatDuration(playerDuration)}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -1057,15 +1163,13 @@ const PostPage = () => {
 
                   {/* Text input */}
                   <div className="flex-1 relative">
-                    <input
-                      type="text"
+                    <textarea
+                      ref={commentTextareaRef}
+                      rows={1}
                       value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && canSend && !sendDisabled) {
-                          e.preventDefault();
-                          handleSendComment();
-                        }
+                      onChange={(e) => {
+                        setNewComment(e.target.value);
+                        resizeCommentTextarea();
                       }}
                       disabled={!!recordedBlob}
                       placeholder={
@@ -1077,7 +1181,7 @@ const PostPage = () => {
                           ? `Reply to ${replyingTo.targetAuthorName}…`
                           : "Add a comment…"
                       }
-                      className={`w-full px-4 py-2 rounded-full text-sm border transition-all focus:outline-none focus:ring-2 focus:ring-gray-400 ${
+                      className={`w-full px-4 py-2.5 rounded-2xl text-sm border transition-all resize-none overflow-y-auto min-h-[40px] max-h-40 leading-normal focus:outline-none focus:ring-2 focus:ring-gray-400 ${
                         recordedBlob
                           ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
                           : "bg-white border-gray-300"

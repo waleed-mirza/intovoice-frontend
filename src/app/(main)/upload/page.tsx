@@ -6,8 +6,10 @@ import Image from "next/image";
 import Api from "@/lib/axios";
 import { useAuth } from "@/providers/AuthProvider";
 import { useVoiceUpload } from "@/hooks/useVoiceUpload";
+import useVoiceRecorder from "@/hooks/useVoiceRecorder";
 import { formatDuration } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
   Loader2,
   Upload,
@@ -16,6 +18,8 @@ import {
   Clock,
   AlertCircle,
   X,
+  Mic,
+  Trash2,
 } from "@/components/voice/VoiceIcons";
 
 interface Station {
@@ -25,9 +29,12 @@ interface Station {
   avatarURL?: string;
 }
 
-const MAX_DURATION = 3600;
+const MAX_DURATION = 29 * 60;
+const MAX_DURATION_MINUTES = 29;
 const MAX_AUDIO_SIZE = 500 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+type AudioSource = "upload" | "record";
 
 function UploadPageContent() {
   const router = useRouter();
@@ -45,6 +52,7 @@ function UploadPageContent() {
   const [thumbnailURL, setThumbnailURL] = useState("");
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioURL, setAudioURL] = useState("");
+  const [audioSource, setAudioSource] = useState<AudioSource>("upload");
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
@@ -52,6 +60,22 @@ function UploadPageContent() {
 
   const thumbnailUpload = useVoiceUpload();
   const audioUpload = useVoiceUpload();
+
+  const {
+    isRecording,
+    recordingSeconds,
+    recordedBlob,
+    recordedPreviewUrl,
+    showMaxReachedTooltip,
+    startRecording,
+    stopRecording,
+    resetAudioState,
+    formatSeconds,
+  } = useVoiceRecorder({
+    maxSeconds: MAX_DURATION,
+    onPermissionDenied: () =>
+      setError("Microphone access is required to record audio"),
+  });
 
   const loadStations = async () => {
     try {
@@ -79,27 +103,21 @@ function UploadPageContent() {
   }, [user, userLoading]);
 
   useEffect(() => {
-    if (stationId && stations.length > 0) {
+    if (stations.length === 0) return;
+
+    if (stationId && stations.some((s) => s.id === stationId)) {
       setSelectedStation(stationId);
+    } else {
+      setSelectedStation(stations[0].id);
     }
   }, [stationId, stations]);
 
-  const handleThumbnailSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_IMAGE_SIZE) {
-      setError("Thumbnail must be less than 10MB");
-      return;
-    }
-    if (!file.type.startsWith("image/")) {
-      setError("Please select an image file");
-      return;
-    }
-    setThumbnailFile(file);
+  const handleThumbnailSelect = (file: File, previewUrl: string) => {
     setThumbnailPreview((prev) => {
       if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
+      return previewUrl;
     });
+    setThumbnailFile(file);
     setThumbnailURL("");
     setError(null);
   };
@@ -126,14 +144,15 @@ function UploadPageContent() {
   };
 
   const handleAudioLoad = () => {
-    if (audioRef.current) {
-      const audioDuration = Math.floor(audioRef.current.duration);
-      setDuration(audioDuration);
-      if (audioDuration > MAX_DURATION) {
-        setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
-      } else {
-        setError(null);
-      }
+    if (!audioRef.current) return;
+    const raw = audioRef.current.duration;
+    if (!Number.isFinite(raw) || raw <= 0) return;
+    const audioDuration = Math.floor(raw);
+    setDuration(audioDuration);
+    if (audioDuration > MAX_DURATION) {
+      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
+    } else {
+      setError(null);
     }
   };
 
@@ -157,7 +176,46 @@ function UploadPageContent() {
     setAudioURL("");
     setDuration(0);
     audioUpload.reset();
+    resetAudioState();
   };
+
+  const switchAudioSource = (source: AudioSource) => {
+    if (source === audioSource) return;
+    clearAudio();
+    setAudioSource(source);
+    setError(null);
+  };
+
+  const handleStartRecording = async () => {
+    setError(null);
+    if (audioFile) clearAudio();
+    await startRecording();
+  };
+
+  const handleStopRecording = async () => {
+    await stopRecording();
+  };
+
+  useEffect(() => {
+    if (!recordedBlob || audioSource !== "record") return;
+    const file = new File(
+      [recordedBlob],
+      `recording-${Date.now()}.webm`,
+      { type: recordedBlob.type }
+    );
+    setAudioFile(file);
+    if (recordingSeconds > 0) {
+      setDuration(recordingSeconds);
+      setError(null);
+    }
+    if (recordedPreviewUrl && audioRef.current) {
+      const prev = audioRef.current.src;
+      if (prev && prev.startsWith("blob:") && prev !== recordedPreviewUrl) {
+        URL.revokeObjectURL(prev);
+      }
+      audioRef.current.src = recordedPreviewUrl;
+    }
+  }, [recordedBlob, recordedPreviewUrl, audioSource, recordingSeconds]);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return bytes + " B";
@@ -183,11 +241,11 @@ function UploadPageContent() {
       setError("Audio file is required");
       return;
     }
-    if (duration > MAX_DURATION) {
-      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+    if (!Number.isFinite(duration) || duration > MAX_DURATION) {
+      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
       return;
     }
-    if (duration === 0) {
+    if (duration <= 0) {
       setError("Could not detect audio duration. Please try a different file.");
       return;
     }
@@ -340,68 +398,186 @@ function UploadPageContent() {
               <ImageIcon className="w-4 h-4 inline mr-1" />
               Thumbnail *
             </label>
-            {!thumbnailFile && !thumbnailPreview ? (
-              <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
-                <Upload className="w-10 h-10 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-500">Click to upload thumbnail</span>
-                <input type="file" accept="image/*" onChange={handleThumbnailSelect} className="hidden" />
-              </label>
-            ) : (
-              <div className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={thumbnailPreview} alt="Thumbnail preview" className="w-full max-w-md h-auto rounded-lg" />
-                <button
-                  type="button"
-                  onClick={clearThumbnail}
-                  className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-md"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
+            <ThumbnailPicker
+              previewUrl={thumbnailPreview}
+              onSelect={handleThumbnailSelect}
+              onClear={clearThumbnail}
+              maxSizeBytes={MAX_IMAGE_SIZE}
+              onValidationError={setError}
+            />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Music className="w-4 h-4 inline mr-1" />
-              Audio File *
-            </label>
-            {!audioFile ? (
-              <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
-                <Music className="w-10 h-10 text-gray-400 mb-2" />
-                <span className="text-sm text-gray-500">Click to upload audio</span>
-                <input type="file" accept="audio/*" onChange={handleAudioSelect} className="hidden" />
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                <Music className="w-4 h-4 inline mr-1" />
+                Audio *
               </label>
-            ) : (
-              <div className="p-4 border border-gray-200 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
-                      <Music className="w-6 h-6 text-gray-700" />
-                    </div>
-                    <div>
-                      <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
-                      <div className="text-sm text-gray-500">
-                        {formatFileSize(audioFile.size)}
-                        {duration > 0 && ` • ${formatDuration(duration)}`}
+              <span className="text-xs text-gray-500">Max {MAX_DURATION_MINUTES} minutes</span>
+            </div>
+
+            <div className="flex rounded-lg border border-gray-200 p-1 mb-4">
+              <button
+                type="button"
+                onClick={() => switchAudioSource("upload")}
+                disabled={isRecording}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  audioSource === "upload"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <Upload className="w-4 h-4" />
+                Upload file
+              </button>
+              <button
+                type="button"
+                onClick={() => switchAudioSource("record")}
+                disabled={isRecording}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                  audioSource === "record"
+                    ? "bg-gray-900 text-white"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <Mic className="w-4 h-4" />
+                Record on the go
+              </button>
+            </div>
+
+            {audioSource === "upload" && (
+              <>
+                {!audioFile ? (
+                  <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
+                    <Music className="w-10 h-10 text-gray-400 mb-2" />
+                    <span className="text-sm text-gray-500">Click to upload audio</span>
+                    <span className="text-xs text-gray-400 mt-1">Up to {MAX_DURATION_MINUTES} minutes</span>
+                    <input type="file" accept="audio/*" onChange={handleAudioSelect} className="hidden" />
+                  </label>
+                ) : (
+                  <div className="p-4 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Music className="w-6 h-6 text-gray-700" />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
+                          <div className="text-sm text-gray-500">
+                            {formatFileSize(audioFile.size)}
+                            {duration > 0 && ` • ${formatDuration(duration)}`}
+                          </div>
+                        </div>
                       </div>
+                      <button type="button" onClick={clearAudio} className="p-2 text-gray-400 hover:text-red-500">
+                        <X className="w-5 h-5" />
+                      </button>
                     </div>
-                  </div>
-                  <button type="button" onClick={clearAudio} className="p-2 text-gray-400 hover:text-red-500">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-                {duration > 0 && (
-                  <div
-                    className={`flex items-center gap-2 mt-3 p-3 rounded-lg ${
-                      duration > MAX_DURATION ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
-                    }`}
-                  >
-                    <Clock className="w-4 h-4" />
-                    <span>Duration: {formatDuration(duration)}</span>
+                    {duration > 0 && (
+                      <div
+                        className={`flex items-center gap-2 mt-3 p-3 rounded-lg ${
+                          duration > MAX_DURATION ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
+                        }`}
+                      >
+                        <Clock className="w-4 h-4" />
+                        <span>Duration: {formatDuration(duration)}</span>
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
+              </>
+            )}
+
+            {audioSource === "record" && (
+              <>
+                {isRecording ? (
+                  <div className="p-6 border border-red-200 bg-red-50/50 rounded-lg">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <span className="relative flex h-3 w-3">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500" />
+                        </span>
+                        <span className="font-medium text-gray-900">Recording...</span>
+                      </div>
+                      <span className="text-sm font-mono text-gray-700">
+                        {formatSeconds(recordingSeconds)} / {formatSeconds(MAX_DURATION)}
+                      </span>
+                    </div>
+                    <div className="w-full h-1.5 bg-gray-200 rounded-full overflow-hidden mb-4">
+                      <div
+                        className="h-full bg-red-500 transition-all duration-300"
+                        style={{ width: `${Math.min(100, (recordingSeconds / MAX_DURATION) * 100)}%` }}
+                      />
+                    </div>
+                    {showMaxReachedTooltip && (
+                      <p className="text-sm text-amber-700 mb-3">
+                        Maximum duration of {MAX_DURATION_MINUTES} minutes reached.
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleStopRecording}
+                      className="w-full py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                      <span className="w-3 h-3 bg-white rounded-sm" />
+                      Stop recording
+                    </button>
+                  </div>
+                ) : !audioFile ? (
+                  <div className="flex flex-col items-center justify-center w-full py-10 border-2 border-dashed border-gray-300 rounded-lg">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <Mic className="w-8 h-8 text-gray-600" />
+                    </div>
+                    <p className="text-sm text-gray-600 mb-1">Record audio directly from your microphone</p>
+                    <p className="text-xs text-gray-400 mb-5">Up to {MAX_DURATION_MINUTES} minutes</p>
+                    <button
+                      type="button"
+                      onClick={handleStartRecording}
+                      className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors flex items-center gap-2"
+                    >
+                      <Mic className="w-4 h-4" />
+                      Start recording
+                    </button>
+                  </div>
+                ) : (
+                  <div className="p-4 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
+                          <Mic className="w-6 h-6 text-gray-700" />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">Voice recording</div>
+                          <div className="text-sm text-gray-500">
+                            {formatFileSize(audioFile.size)}
+                            {duration > 0 && ` • ${formatDuration(duration)}`}
+                          </div>
+                        </div>
+                      </div>
+                      <button type="button" onClick={clearAudio} className="p-2 text-gray-400 hover:text-red-500">
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                    {recordedPreviewUrl && (
+                      <audio src={recordedPreviewUrl} controls className="w-full mt-3" />
+                    )}
+                    {duration > 0 && (
+                      <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-green-50 text-green-700">
+                        <Clock className="w-4 h-4" />
+                        <span>Duration: {formatDuration(duration)}</span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleStartRecording}
+                      className="mt-3 w-full py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Record again
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -432,7 +608,10 @@ function UploadPageContent() {
             disabled={
               publishing ||
               isUploading ||
+              isRecording ||
+              !Number.isFinite(duration) ||
               duration > MAX_DURATION ||
+              duration <= 0 ||
               !selectedStation ||
               !title ||
               (!thumbnailFile && !thumbnailURL) ||
