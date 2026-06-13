@@ -8,6 +8,13 @@ import { useAuth } from "@/providers/AuthProvider";
 import { useVoiceUpload } from "@/hooks/useVoiceUpload";
 import useVoiceRecorder from "@/hooks/useVoiceRecorder";
 import { formatDuration } from "@/utils/voiceHelpers";
+import {
+  getMediaDuration,
+  isAllowedPostMediaFile,
+  isVideoMediaFile,
+  POST_MEDIA_ACCEPT,
+  POST_MEDIA_HINT,
+} from "@/utils/voiceMediaUpload";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
@@ -122,24 +129,35 @@ function UploadPageContent() {
     setError(null);
   };
 
-  const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+
     if (file.size > MAX_AUDIO_SIZE) {
-      setError("Audio file must be less than 500MB");
+      setError("File must be less than 500MB");
       return;
     }
-    if (!file.type.startsWith("audio/")) {
-      setError("Please select an audio file");
+    if (!isAllowedPostMediaFile(file)) {
+      setError("Please select an audio or video file");
       return;
     }
+
     setAudioFile(file);
     setAudioURL("");
+    setDuration(0);
     setError(null);
-    if (audioRef.current) {
-      const prev = audioRef.current.src;
-      if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
-      audioRef.current.src = URL.createObjectURL(file);
+
+    try {
+      const mediaDuration = await getMediaDuration(file);
+      setDuration(mediaDuration);
+      if (mediaDuration > MAX_DURATION) {
+        setError(`Duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
+      }
+    } catch {
+      setError("Could not read this file. Please try a different audio or video file.");
+      setAudioFile(null);
+      setDuration(0);
     }
   };
 
@@ -259,8 +277,14 @@ function UploadPageContent() {
         finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
         setThumbnailURL(finalThumbnailURL);
       }
+      let finalDuration = duration;
       if (audioFile && !audioURL) {
-        finalAudioURL = await audioUpload.upload(audioFile, "audio");
+        const uploadResult = await audioUpload.uploadPostMedia(audioFile);
+        finalAudioURL = uploadResult.fileUrl;
+        if (uploadResult.duration && uploadResult.duration > 0) {
+          finalDuration = uploadResult.duration;
+          setDuration(finalDuration);
+        }
         setAudioURL(finalAudioURL);
       }
       const res = await Api.post("/voice/post", {
@@ -269,7 +293,7 @@ function UploadPageContent() {
         description,
         thumbnailURL: finalThumbnailURL,
         audioURL: finalAudioURL,
-        duration,
+        duration: finalDuration,
       });
       router.push(`/post/${res.data.result.id}`);
     } catch (err: unknown) {
@@ -285,8 +309,10 @@ function UploadPageContent() {
   };
 
   const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
+  const isExtracting = audioUpload.extracting;
+  const isBusy = isUploading || isExtracting;
   const overallProgress = (() => {
-    if (!isUploading) return null;
+    if (!isBusy) return null;
     const thumbProgress = thumbnailUpload.progress?.percent || (thumbnailURL ? 100 : 0);
     const audioProgress = audioUpload.progress?.percent || (audioURL ? 100 : 0);
     const hasThumb = thumbnailFile || thumbnailURL;
@@ -450,9 +476,14 @@ function UploadPageContent() {
                 {!audioFile ? (
                   <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors">
                     <Music className="w-10 h-10 text-gray-400 mb-2" />
-                    <span className="text-sm text-gray-500">Click to upload audio</span>
-                    <span className="text-xs text-gray-400 mt-1">Up to {MAX_DURATION_MINUTES} minutes</span>
-                    <input type="file" accept="audio/*" onChange={handleAudioSelect} className="hidden" />
+                    <span className="text-sm text-gray-500">Click to upload audio or video</span>
+                    <span className="text-xs text-gray-400 mt-1">{POST_MEDIA_HINT}</span>
+                    <input
+                      type="file"
+                      accept={POST_MEDIA_ACCEPT}
+                      onChange={handleAudioSelect}
+                      className="hidden"
+                    />
                   </label>
                 ) : (
                   <div className="p-4 border border-gray-200 rounded-lg">
@@ -464,6 +495,7 @@ function UploadPageContent() {
                         <div>
                           <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
                           <div className="text-sm text-gray-500">
+                            {isVideoMediaFile(audioFile) ? "Video (audio will be extracted) • " : ""}
                             {formatFileSize(audioFile.size)}
                             {duration > 0 && ` • ${formatDuration(duration)}`}
                           </div>
@@ -588,10 +620,10 @@ function UploadPageContent() {
             </div>
           )}
 
-          {isUploading && overallProgress !== null && (
+          {isBusy && overallProgress !== null && (
             <div className="p-4 bg-gray-50 rounded-lg">
               <div className="flex justify-between text-sm text-gray-700 mb-2">
-                <span>Uploading files...</span>
+                <span>{isExtracting ? "Extracting audio from video..." : "Uploading files..."}</span>
                 <span>{overallProgress}%</span>
               </div>
               <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
@@ -607,7 +639,7 @@ function UploadPageContent() {
             type="submit"
             disabled={
               publishing ||
-              isUploading ||
+              isBusy ||
               isRecording ||
               !Number.isFinite(duration) ||
               duration > MAX_DURATION ||
@@ -619,10 +651,10 @@ function UploadPageContent() {
             }
             className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg"
           >
-            {publishing || isUploading ? (
+            {publishing || isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                {isUploading ? "Uploading..." : "Publishing..."}
+                {isExtracting ? "Extracting audio..." : isUploading ? "Uploading..." : "Publishing..."}
               </>
             ) : (
               <>

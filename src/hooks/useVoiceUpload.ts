@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import Api from "@/lib/axios";
+import { extractAudioFromVideo } from "@/utils/extractAudioFromVideo";
+import { isVideoMediaFile } from "@/utils/voiceMediaUpload";
 
 export type UploadType = "thumbnail" | "audio" | "avatar" | "banner";
 
@@ -9,9 +11,16 @@ interface UploadProgress {
   percent: number;
 }
 
+interface UploadAudioResult {
+  fileUrl: string;
+  duration?: number;
+}
+
 interface UseVoiceUploadReturn {
   upload: (file: File, type: UploadType) => Promise<string>;
+  uploadPostMedia: (file: File) => Promise<UploadAudioResult>;
   uploading: boolean;
+  extracting: boolean;
   progress: UploadProgress | null;
   error: string | null;
   reset: () => void;
@@ -19,11 +28,13 @@ interface UseVoiceUploadReturn {
 
 export const useVoiceUpload = (): UseVoiceUploadReturn => {
   const [uploading, setUploading] = useState(false);
+  const [extracting, setExtracting] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setUploading(false);
+    setExtracting(false);
     setProgress(null);
     setError(null);
   }, []);
@@ -34,21 +45,19 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
     setError(null);
 
     try {
-      // Step 1: Get signed URL from backend
       const signedUrlRes = await Api.get("/voice/upload/signed-url", {
         params: {
           fileName: file.name,
-          fileType: file.type,
+          fileType: file.type || "application/octet-stream",
           uploadType: type,
         },
       });
 
       const { signedUrl, fileUrl } = signedUrlRes.data;
 
-      // Step 2: Upload file directly to S3 using signed URL
       await new Promise<void>((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        
+
         xhr.upload.addEventListener("progress", (event) => {
           if (event.lengthComputable) {
             setProgress({
@@ -72,13 +81,13 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
         });
 
         xhr.open("PUT", signedUrl);
-        xhr.setRequestHeader("Content-Type", file.type);
+        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
         xhr.send(file);
       });
 
       setProgress({ loaded: file.size, total: file.size, percent: 100 });
       setUploading(false);
-      
+
       return fileUrl;
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
@@ -89,7 +98,46 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
     }
   }, []);
 
-  return { upload, uploading, progress, error, reset };
+  const uploadPostMedia = useCallback(
+    async (file: File): Promise<UploadAudioResult> => {
+      setError(null);
+
+      try {
+        let audioFile = file;
+        let duration: number | undefined;
+
+        if (isVideoMediaFile(file)) {
+          setExtracting(true);
+          setProgress({ loaded: 0, total: 100, percent: 0 });
+
+          const extracted = await extractAudioFromVideo(file, (percent) => {
+            setProgress({ loaded: percent, total: 100, percent });
+          });
+
+          audioFile = extracted.file;
+          duration = extracted.duration;
+          setExtracting(false);
+        }
+
+        const fileUrl = await upload(audioFile, "audio");
+        return { fileUrl, duration };
+      } catch (err: unknown) {
+        const axiosErr = err as { message?: string };
+        const errorMessage =
+          axiosErr.message ||
+          (isVideoMediaFile(file)
+            ? "Failed to extract audio from video"
+            : "Upload failed");
+        setError(errorMessage);
+        setExtracting(false);
+        setUploading(false);
+        throw new Error(errorMessage);
+      }
+    },
+    [upload]
+  );
+
+  return { upload, uploadPostMedia, uploading, extracting, progress, error, reset };
 };
 
 export default useVoiceUpload;

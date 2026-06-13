@@ -95,6 +95,7 @@ body {
 /* Image crop modal — react-easy-crop overrides */
 .voice-crop-stage .reactEasyCrop_Container {
   background: #000;
+  touch-action: none;
 }
 
 .voice-crop-stage .reactEasyCrop_CropArea {

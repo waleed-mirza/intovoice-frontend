@@ -98,7 +98,7 @@ export default function ThumbnailPicker({
         <button
           type="button"
           onClick={openFilePicker}
-          className="flex flex-col items-center justify-center w-full max-w-md aspect-video border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
+          className="flex flex-col items-center justify-center w-full aspect-video border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
         >
           <Upload className="w-10 h-10 text-gray-400 mb-2" />
           <span className="text-sm text-gray-500">{emptyLabel}</span>
@@ -107,7 +107,7 @@ export default function ThumbnailPicker({
           </span>
         </button>
       ) : (
-        <div className="relative w-full max-w-md aspect-video rounded-lg overflow-hidden bg-gray-100">
+        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-gray-100">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={previewUrl}

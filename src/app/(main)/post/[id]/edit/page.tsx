@@ -6,6 +6,13 @@ import Api from "@/lib/axios";
 import { useAuth } from "@/providers/AuthProvider";
 import { useVoiceUpload } from "@/hooks/useVoiceUpload";
 import { formatDuration } from "@/utils/voiceHelpers";
+import {
+  getMediaDuration,
+  isAllowedPostMediaFile,
+  isVideoMediaFile,
+  POST_MEDIA_ACCEPT,
+  POST_MEDIA_HINT,
+} from "@/utils/voiceMediaUpload";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
@@ -105,23 +112,36 @@ export default function EditPostPage() {
     thumbnailUpload.reset();
   };
 
-  const handleAudioSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    e.target.value = "";
+
     if (file.size > MAX_AUDIO_SIZE) {
-      setError("Audio file must be less than 500MB");
+      setError("File must be less than 500MB");
       return;
     }
-    if (!file.type.startsWith("audio/")) {
-      setError("Please select an audio file");
+    if (!isAllowedPostMediaFile(file)) {
+      setError("Please select an audio or video file");
       return;
     }
+
     setAudioFile(file);
     setNewAudioURL("");
     setNewDuration(0);
     setError(null);
-    const objectUrl = URL.createObjectURL(file);
-    if (audioRef.current) audioRef.current.src = objectUrl;
+
+    try {
+      const mediaDuration = await getMediaDuration(file);
+      setNewDuration(mediaDuration);
+      if (mediaDuration > MAX_DURATION) {
+        setError(`Duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+      }
+    } catch {
+      setError("Could not read this file. Please try a different audio or video file.");
+      setAudioFile(null);
+      setNewDuration(0);
+    }
   };
 
   const handleAudioLoad = () => {
@@ -160,9 +180,13 @@ export default function EditPostPage() {
       let finalAudioURL = post.audioURL;
       let finalDuration = post.duration;
       if (audioFile && !newAudioURL) {
-        finalAudioURL = await audioUpload.upload(audioFile, "audio");
+        const uploadResult = await audioUpload.uploadPostMedia(audioFile);
+        finalAudioURL = uploadResult.fileUrl;
+        finalDuration = uploadResult.duration && uploadResult.duration > 0
+          ? uploadResult.duration
+          : newDuration;
         setNewAudioURL(finalAudioURL);
-        finalDuration = newDuration;
+        setNewDuration(finalDuration);
       } else if (newAudioURL) {
         finalAudioURL = newAudioURL;
         finalDuration = newDuration;
@@ -188,6 +212,8 @@ export default function EditPostPage() {
   };
 
   const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
+  const isExtracting = audioUpload.extracting;
+  const isBusy = isUploading || isExtracting;
 
   if (userLoading || loading) {
     return (
@@ -280,12 +306,21 @@ export default function EditPostPage() {
             {!audioFile ? (
               <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50">
                 <Music className="w-8 h-8 text-gray-400 mb-1" />
-                <span className="text-sm text-gray-500">Replace audio file (optional)</span>
-                <input type="file" accept="audio/*" onChange={handleAudioSelect} className="hidden" />
+                <span className="text-sm text-gray-500">Replace audio or video file (optional)</span>
+                <span className="text-xs text-gray-400 mt-1">{POST_MEDIA_HINT}</span>
+                <input
+                  type="file"
+                  accept={POST_MEDIA_ACCEPT}
+                  onChange={handleAudioSelect}
+                  className="hidden"
+                />
               </label>
             ) : (
               <div className="p-4 border border-gray-200 rounded-lg">
                 <div className="font-medium text-gray-900 truncate">{audioFile.name}</div>
+                {isVideoMediaFile(audioFile) && (
+                  <p className="text-sm text-gray-500 mt-1">Video selected — only audio will be saved.</p>
+                )}
                 {newDuration > 0 && (
                   <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-green-50 text-green-700">
                     <Clock className="w-4 h-4" />
@@ -313,16 +348,16 @@ export default function EditPostPage() {
             type="submit"
             disabled={
               saving ||
-              isUploading ||
+              isBusy ||
               !title.trim() ||
               (audioFile ? newDuration > MAX_DURATION : false)
             }
             className="w-full py-4 bg-black text-white font-bold rounded-xl hover:bg-gray-800 disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
           >
-            {saving || isUploading ? (
+            {saving || isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                {isUploading ? "Uploading..." : "Saving..."}
+                {isExtracting ? "Extracting audio..." : isUploading ? "Uploading..." : "Saving..."}
               </>
             ) : (
               <>
