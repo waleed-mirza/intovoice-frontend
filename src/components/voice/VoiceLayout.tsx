@@ -16,6 +16,7 @@ import {
   ChevronUp,
   Bell,
   Settings,
+  CassetteTape,
   Loader2,
 } from "@/components/voice/VoiceIcons";
 import { useAuth } from "@/providers/AuthProvider";
@@ -34,7 +35,7 @@ interface VoiceLayoutProps {
   showBackButton?: boolean;
 }
 
-const MAIN_ROUTES = ["/", "/live", "/explore", "/subscriptions", "/my-stations", "/settings"];
+const MAIN_ROUTES = ["/", "/tapes", "/live", "/explore", "/subscriptions", "/my-stations", "/settings"];
 
 const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
   const router = useRouter();
@@ -127,8 +128,11 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
     }
   };
 
+  const isTapeRoute = pathname.startsWith("/tapes");
+
   const navItems = [
     { href: "/", icon: Home, label: "Home" },
+    { href: "/tapes", icon: CassetteTape, label: "Tapes" },
     { href: "/live", icon: Radio, label: "Live" },
     { href: "/explore", icon: Compass, label: "Explore" },
   ];
@@ -293,20 +297,22 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
         </div>
       </header>
 
-      <div className="fixed top-14 left-0 right-0 p-3 bg-white border-b border-gray-200 z-40 sm:hidden">
-        <form onSubmit={handleSearch}>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-gray-100 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-400"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-          </div>
-        </form>
-      </div>
+      {!isTapeRoute && (
+        <div className="fixed top-14 left-0 right-0 p-3 bg-white border-b border-gray-200 z-40 sm:hidden">
+          <form onSubmit={handleSearch}>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-100 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-gray-400"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+            </div>
+          </form>
+        </div>
+      )}
 
       {sidebarOpen && (
         <div
@@ -450,30 +456,34 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
         </div>
       </aside>
 
-      <main className="pt-14 lg:pl-64 pb-40 md:pb-36 lg:pb-24">
-        <div className="pt-[60px] sm:pt-0">{children}</div>
+      <main
+        className={`pt-14 lg:pl-64 lg:pb-24 ${
+          isTapeRoute ? "pb-0" : "pb-40 md:pb-36"
+        }`}
+      >
+        <div className={isTapeRoute ? "" : "pt-[60px] sm:pt-0"}>{children}</div>
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 flex items-center justify-around z-40 lg:hidden">
+      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 flex items-center justify-around z-40 lg:hidden px-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`flex flex-col items-center gap-1 px-4 py-2 ${
+            className={`flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 ${
               isActive(item.href) ? "text-gray-900" : "text-gray-500"
             }`}
           >
-            <item.icon className="w-5 h-5" />
-            <span className="text-xs">{item.label}</span>
+            <item.icon className="w-5 h-5 flex-shrink-0" />
+            <span className="text-[10px] truncate">{item.label}</span>
           </Link>
         ))}
         <button
           onClick={handleUploadClick}
           disabled={checkingStation}
-          className="flex flex-col items-center gap-1 px-4 py-2 text-gray-500 disabled:opacity-50"
+          className="flex flex-col items-center gap-0.5 px-2 py-2 text-gray-500 disabled:opacity-50 min-w-0"
         >
-          <Plus className="w-5 h-5" />
-          <span className="text-xs">Upload</span>
+          <Plus className="w-5 h-5 flex-shrink-0" />
+          <span className="text-[10px]">Upload</span>
         </button>
       </nav>
     </div>

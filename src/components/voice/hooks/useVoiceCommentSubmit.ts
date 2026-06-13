@@ -4,6 +4,7 @@ import Api from "@/lib/axios";
 
 interface UseVoiceCommentSubmitOptions<T = unknown> {
   postId?: string;
+  tapeId?: string;
   parentId?: string | null;
   maxRecordingSeconds: number;
   onSuccess?: (comment: T) => void;
@@ -20,6 +21,7 @@ interface SubmitArgs {
 
 const useVoiceCommentSubmit = <T = unknown>({
   postId,
+  tapeId,
   parentId,
   maxRecordingSeconds,
   onSuccess,
@@ -34,10 +36,11 @@ const useVoiceCommentSubmit = <T = unknown>({
     recordingSeconds,
     onTooLong,
   }: SubmitArgs): Promise<T | null> => {
-    if (!postId) return null;
+    if (!postId && !tapeId) return null;
     if (isSending) return null;
 
     const trimmedText = (text || "").trim();
+    const targetId = tapeId || postId;
 
     setIsSending(true);
     try {
@@ -53,12 +56,10 @@ const useVoiceCommentSubmit = <T = unknown>({
 
       let audioFileURL: string | undefined;
       if (blobToSend) {
-        // Determine extension from blob type
         const fileType = blobToSend.type || "audio/webm";
         const extension = fileType.includes("ogg") ? "ogg" : "webm";
-        const fileName = `voice-comment-${postId}-${Date.now()}.${extension}`;
+        const fileName = `voice-comment-${targetId}-${Date.now()}.${extension}`;
 
-        // Step 1: Get signed URL from voice upload endpoint
         const signedUrlRes = await Api.get("/voice/upload/signed-url", {
           params: {
             fileName,
@@ -69,7 +70,6 @@ const useVoiceCommentSubmit = <T = unknown>({
 
         const { signedUrl, fileUrl } = signedUrlRes.data;
 
-        // Step 2: Upload blob directly to S3
         await axios.put(signedUrl, blobToSend, {
           headers: {
             "Content-Type": fileType,
@@ -83,8 +83,11 @@ const useVoiceCommentSubmit = <T = unknown>({
         return null;
       }
 
-      // Step 3: Create comment with text and/or audioFileURL
-      const res = await Api.post(`/voice/comment/post/${postId}`, {
+      const endpoint = tapeId
+        ? `/voice/tape/${tapeId}/comments`
+        : `/voice/comment/post/${postId}`;
+
+      const res = await Api.post(endpoint, {
         content: trimmedText,
         audioFileURL,
         ...(parentId ? { parentId } : {}),

@@ -11,7 +11,7 @@ import {
   Trash2,
   Pencil,
 } from "@/components/voice/VoiceIcons";
-import { formatDuration, formatTimeAgo, formatViews } from "@/utils/voiceHelpers";
+import { formatDuration, formatTimeAgo, formatListens } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import ReportModal from "@/components/reports/ReportModal";
 import { useAuth } from "@/providers/AuthProvider";
@@ -208,9 +208,9 @@ const VoicePostCard = ({ post, isOwner = false, onDelete, onEdit }: VoicePostCar
             {post.station.name}
           </Link>
 
-          {/* Views and time - same line like YouTube */}
+          {/* Listens and time - same line like YouTube */}
           <div className="text-[13px] text-gray-600">
-            {formatViews(post.viewCount)} • {formatTimeAgo(post.createdAt)}
+            {formatListens(post.viewCount)} • {formatTimeAgo(post.createdAt)}
           </div>
         </div>
       </div>

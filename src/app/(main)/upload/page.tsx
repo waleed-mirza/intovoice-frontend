@@ -11,7 +11,7 @@ import { formatDuration } from "@/utils/voiceHelpers";
 import {
   getMediaDuration,
   isAllowedPostMediaFile,
-  isVideoMediaFile,
+  needsAudioExtraction,
   POST_MEDIA_ACCEPT,
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
@@ -495,7 +495,7 @@ function UploadPageContent() {
                         <div>
                           <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
                           <div className="text-sm text-gray-500">
-                            {isVideoMediaFile(audioFile) ? "Video (audio will be extracted) • " : ""}
+                            {needsAudioExtraction(audioFile) ? "Video (audio will be extracted) • " : ""}
                             {formatFileSize(audioFile.size)}
                             {duration > 0 && ` • ${formatDuration(duration)}`}
                           </div>

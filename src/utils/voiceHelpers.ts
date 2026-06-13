@@ -15,6 +15,12 @@ export const VOICE_POST_THUMBNAIL_ASPECT = 16 / 9;
 /** Recommended upload size label for voice post thumbnails. */
 export const VOICE_POST_THUMBNAIL_SIZE_LABEL = "1280×720";
 
+/** Width:height ratio for tape thumbnails (vertical feed). */
+export const TAPE_THUMBNAIL_ASPECT = 9 / 16;
+
+/** Recommended upload size label for tape thumbnails. */
+export const TAPE_THUMBNAIL_SIZE_LABEL = "720×1280";
+
 export const formatDuration = (seconds: number): string => {
   if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
   const hours = Math.floor(seconds / 3600);
@@ -41,7 +47,7 @@ export const formatTimeAgo = (createdAt: string): string => {
   return date.toLocaleDateString();
 };
 
-export const formatViews = (count: number): string => {
+export const formatListens = (count: number): string => {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M listens`;
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}K listens`;
   return `${count} listens`;

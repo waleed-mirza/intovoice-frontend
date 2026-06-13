@@ -9,7 +9,7 @@ import { formatDuration } from "@/utils/voiceHelpers";
 import {
   getMediaDuration,
   isAllowedPostMediaFile,
-  isVideoMediaFile,
+  needsAudioExtraction,
   POST_MEDIA_ACCEPT,
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
@@ -318,7 +318,7 @@ export default function EditPostPage() {
             ) : (
               <div className="p-4 border border-gray-200 rounded-lg">
                 <div className="font-medium text-gray-900 truncate">{audioFile.name}</div>
-                {isVideoMediaFile(audioFile) && (
+                {needsAudioExtraction(audioFile) && (
                   <p className="text-sm text-gray-500 mt-1">Video selected — only audio will be saved.</p>
                 )}
                 {newDuration > 0 && (

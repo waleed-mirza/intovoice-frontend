@@ -16,6 +16,14 @@ interface ThumbnailPickerProps {
   onValidationError?: (message: string) => void;
   emptyLabel?: string;
   className?: string;
+  /** Crop aspect width÷height (default 16:9 voice post). */
+  aspect?: number;
+  /** Tailwind aspect class for preview/empty state (default aspect-video). */
+  aspectClassName?: string;
+  /** Recommended pixel dimensions label, e.g. 720×1280 */
+  sizeLabel?: string;
+  /** Human-readable ratio label, e.g. 9:16 */
+  ratioLabel?: string;
 }
 
 const DEFAULT_MAX_SIZE = 10 * 1024 * 1024;
@@ -28,6 +36,10 @@ export default function ThumbnailPicker({
   onValidationError,
   emptyLabel = "Click to upload thumbnail",
   className = "",
+  aspect = VOICE_POST_THUMBNAIL_ASPECT,
+  aspectClassName = "aspect-video",
+  sizeLabel = VOICE_POST_THUMBNAIL_SIZE_LABEL,
+  ratioLabel = "16:9",
 }: ThumbnailPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
@@ -85,7 +97,7 @@ export default function ThumbnailPicker({
         <ImageCropModal
           isOpen={cropModalOpen}
           imageSrc={cropImageSrc}
-          aspect={VOICE_POST_THUMBNAIL_ASPECT}
+          aspect={aspect}
           cropShape="rect"
           outputFileName="thumbnail.jpg"
           title="Crop thumbnail"
@@ -98,16 +110,16 @@ export default function ThumbnailPicker({
         <button
           type="button"
           onClick={openFilePicker}
-          className="flex flex-col items-center justify-center w-full aspect-video border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
+          className={`flex flex-col items-center justify-center w-full ${aspectClassName} border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors`}
         >
           <Upload className="w-10 h-10 text-gray-400 mb-2" />
           <span className="text-sm text-gray-500">{emptyLabel}</span>
           <span className="text-xs text-gray-400 mt-1">
-            Recommended: {VOICE_POST_THUMBNAIL_SIZE_LABEL}px (16:9)
+            Recommended: {sizeLabel}px ({ratioLabel})
           </span>
         </button>
       ) : (
-        <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-gray-100">
+        <div className={`relative w-full ${aspectClassName} rounded-lg overflow-hidden bg-gray-100`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={previewUrl}

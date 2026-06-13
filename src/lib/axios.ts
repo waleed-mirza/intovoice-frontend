@@ -53,8 +53,12 @@ Api.interceptors.response.use(
       const isPublicPath =
         currentPath === "/" ||
         currentPath.startsWith("/explore") ||
+        currentPath === "/tapes" ||
+        (currentPath.startsWith("/tapes/") &&
+          !currentPath.startsWith("/tapes/upload")) ||
         currentPath.startsWith("/category") ||
         currentPath.startsWith("/station") ||
+        currentPath.startsWith("/user/") ||
         currentPath.startsWith("/post");
       const isVerifyEndpoint = error.config?.url?.includes("/auth/verify");
 

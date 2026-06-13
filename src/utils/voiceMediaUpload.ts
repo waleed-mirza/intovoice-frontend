@@ -1,6 +1,18 @@
 const VIDEO_EXTENSIONS = [
   ".mp4",
+  ".mov",
+  ".avi",
+  ".mkv",
+  ".m4v",
+  ".mpeg",
+  ".mpg",
+  ".ogv",
+  ".3gp",
+  ".3gpp",
   ".webm",
+];
+
+const VIDEO_ONLY_EXTENSIONS = [
   ".mov",
   ".avi",
   ".mkv",
@@ -30,13 +42,25 @@ function getExtension(fileName: string): string {
 }
 
 export function isVideoMediaFile(file: File): boolean {
+  if (file.type.startsWith("audio/")) return false;
   if (file.type.startsWith("video/")) return true;
   return VIDEO_EXTENSIONS.includes(getExtension(file.name));
 }
 
 export function isAudioMediaFile(file: File): boolean {
+  if (file.type.startsWith("video/")) return false;
   if (file.type.startsWith("audio/")) return true;
   return AUDIO_EXTENSIONS.includes(getExtension(file.name));
+}
+
+/** True only for video uploads that need ffmpeg audio extraction before S3 upload. */
+export function needsAudioExtraction(file: File): boolean {
+  if (file.type.startsWith("audio/")) return false;
+  if (file.type.startsWith("video/")) return true;
+  const ext = getExtension(file.name);
+  if (VIDEO_ONLY_EXTENSIONS.includes(ext)) return true;
+  // Ambiguous .mp4 / .webm without MIME — treat as audio-ready (recordings, audio uploads).
+  return false;
 }
 
 export function isAllowedPostMediaFile(file: File): boolean {
@@ -45,8 +69,8 @@ export function isAllowedPostMediaFile(file: File): boolean {
 
 export function getMediaDuration(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
-    const isVideo = isVideoMediaFile(file);
-    const element = document.createElement(isVideo ? "video" : "audio");
+    const useVideoElement = needsAudioExtraction(file);
+    const element = document.createElement(useVideoElement ? "video" : "audio");
     element.preload = "metadata";
     const objectUrl = URL.createObjectURL(file);
 

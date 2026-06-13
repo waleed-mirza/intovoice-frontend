@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import Api from "@/lib/axios";
 import { extractAudioFromVideo } from "@/utils/extractAudioFromVideo";
-import { isVideoMediaFile } from "@/utils/voiceMediaUpload";
+import { needsAudioExtraction } from "@/utils/voiceMediaUpload";
 
 export type UploadType = "thumbnail" | "audio" | "avatar" | "banner";
 
@@ -106,7 +106,7 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
         let audioFile = file;
         let duration: number | undefined;
 
-        if (isVideoMediaFile(file)) {
+        if (needsAudioExtraction(file)) {
           setExtracting(true);
           setProgress({ loaded: 0, total: 100, percent: 0 });
 
@@ -125,7 +125,7 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
         const axiosErr = err as { message?: string };
         const errorMessage =
           axiosErr.message ||
-          (isVideoMediaFile(file)
+          (needsAudioExtraction(file)
             ? "Failed to extract audio from video"
             : "Upload failed");
         setError(errorMessage);

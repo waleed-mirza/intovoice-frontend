@@ -25,6 +25,9 @@ const VOICE_TYPES = [
   "voice_like",
   "voice_comment",
   "voice_live",
+  "voice_tape_new",
+  "voice_tape_like",
+  "voice_tape_comment",
 ] as const;
 
 type VoiceNotificationType = (typeof VOICE_TYPES)[number];
@@ -109,6 +112,10 @@ export default function NotificationsPage() {
         return <FaComment className="text-purple-500" size={16} />;
       case "voice_live":
         return <FaPodcast className="text-gray-700" size={16} />;
+      case "voice_tape_new":
+      case "voice_tape_like":
+      case "voice_tape_comment":
+        return <FaHeadphones className="text-purple-500" size={16} />;
       default:
         return <BsBell className="text-gray-500" size={16} />;
     }
@@ -126,6 +133,12 @@ export default function NotificationsPage() {
         return "commented on your voice post";
       case "voice_live":
         return "is live";
+      case "voice_tape_new":
+        return "posted a new tape";
+      case "voice_tape_like":
+        return "liked your tape";
+      case "voice_tape_comment":
+        return "commented on your tape";
       default:
         return "sent you a notification";
     }
@@ -140,6 +153,10 @@ export default function NotificationsPage() {
       case "voice_like":
       case "voice_comment":
         return `/post/${notification.content}`;
+      case "voice_tape_new":
+      case "voice_tape_like":
+      case "voice_tape_comment":
+        return `/tapes/${notification.content}`;
       case "voice_live": {
         try {
           const parsed = JSON.parse(notification.content);
@@ -161,6 +178,10 @@ export default function NotificationsPage() {
       case "voice_like":
       case "voice_comment":
         return "Listen";
+      case "voice_tape_new":
+      case "voice_tape_like":
+      case "voice_tape_comment":
+        return "Watch";
       case "voice_live":
         return "Join live";
       default:
@@ -259,6 +280,9 @@ export default function NotificationsPage() {
                 <option value="voice_new_post">Voice New Posts</option>
                 <option value="voice_like">Voice Likes</option>
                 <option value="voice_comment">Voice Comments</option>
+                <option value="voice_tape_new">New Tapes</option>
+                <option value="voice_tape_like">Tape Likes</option>
+                <option value="voice_tape_comment">Tape Comments</option>
                 <option value="voice_live">Live broadcasts</option>
               </select>
 

@@ -2,7 +2,7 @@
 // Keep the codes in sync with into-backend/routes/report/index.ts and
 // into-admin-panel/lib/reports.ts.
 
-export type ReportTargetType = "voice_post" | "voice_comment";
+export type ReportTargetType = "voice_post" | "voice_comment" | "voice_tape";
 
 export type ReportReasonCode =
   | "spam"
@@ -70,6 +70,7 @@ export const REPORT_REASONS: {
 export const TARGET_LABELS: Record<ReportTargetType, string> = {
   voice_post: "voice post",
   voice_comment: "voice comment",
+  voice_tape: "tape",
 };
 
 export const REPORT_DESCRIPTION_MAX = 1000;

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
 import VoicePostCard from "@/components/voice/VoicePostCard";
+import TapeCard from "@/components/tapes/TapeCard";
 import Api from "@/lib/axios";
 import { useAuth } from "@/providers/AuthProvider";
 import {
@@ -17,6 +18,7 @@ import {
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { getCategoryDisplayName } from "@/utils/voiceHelpers";
 import Link from "next/link";
+import type { Tape } from "@/types/tapes";
 
 interface Station {
   id: string;
@@ -56,6 +58,12 @@ export default function StationPage() {
   const [subscribing, setSubscribing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [activeTab, setActiveTab] = useState<"posts" | "tapes">("posts");
+  const [tapes, setTapes] = useState<Tape[]>([]);
+  const [tapesLoading, setTapesLoading] = useState(false);
+  const [tapesLoaded, setTapesLoaded] = useState(false);
+  const [tapesHasMore, setTapesHasMore] = useState(true);
+  const [tapesPage, setTapesPage] = useState(1);
 
   const loadStation = async () => {
     try {
@@ -74,6 +82,32 @@ export default function StationPage() {
     if (id) loadStation();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const loadTapes = async (pageNum = 1, append = false) => {
+    if (!id) return;
+    try {
+      setTapesLoading(true);
+      const res = await Api.get(`/voice/tape/station/${id}`, {
+        params: { page: pageNum, limit: 12 },
+      });
+      const batch: Tape[] = res.data.result || [];
+      setTapes((prev) => (append ? [...prev, ...batch] : batch));
+      setTapesHasMore(res.data.pagination?.hasMore ?? false);
+      setTapesPage(pageNum);
+      setTapesLoaded(true);
+    } catch (err) {
+      console.error("Failed to load station tapes:", err);
+    } finally {
+      setTapesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "tapes" && !tapesLoaded && id) {
+      loadTapes(1, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, id, tapesLoaded]);
 
   const loadMorePosts = async () => {
     if (!hasMore || !id) return;
@@ -266,7 +300,33 @@ export default function StationPage() {
       </div>
 
       <div className="px-4 lg:px-6 py-6">
-        {posts.length === 0 ? (
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          <button
+            type="button"
+            onClick={() => setActiveTab("posts")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === "posts"
+                ? "border-gray-900 text-gray-900"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Audios
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("tapes")}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === "tapes"
+                ? "border-gray-900 text-gray-900"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            Tapes
+          </button>
+        </div>
+
+        {activeTab === "posts" ? (
+          posts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <Grid className="w-12 h-12 text-gray-300 mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No Audios yet</h3>
@@ -304,6 +364,49 @@ export default function StationPage() {
                   className="px-6 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors"
                 >
                   Load more
+                </button>
+              </div>
+            )}
+          </>
+        )
+        ) : tapesLoading && !tapesLoaded ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+          </div>
+        ) : tapes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <Grid className="w-12 h-12 text-gray-300 mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No tapes yet</h3>
+            <p className="text-gray-500">
+              {isOwner
+                ? "Publish a short tape from this station."
+                : "This station hasn't published any tapes yet."}
+            </p>
+            {isOwner && (
+              <Link
+                href="/tapes/upload"
+                className="mt-4 px-6 py-2 bg-black text-white rounded-full hover:bg-gray-800 transition-colors"
+              >
+                Create tape
+              </Link>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+              {tapes.map((tape) => (
+                <TapeCard key={tape.id} tape={tape} compact />
+              ))}
+            </div>
+            {tapesHasMore && (
+              <div className="flex justify-center mt-8">
+                <button
+                  type="button"
+                  onClick={() => loadTapes(tapesPage + 1, true)}
+                  disabled={tapesLoading}
+                  className="px-6 py-2 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50"
+                >
+                  {tapesLoading ? "Loading..." : "Load more"}
                 </button>
               </div>
             )}

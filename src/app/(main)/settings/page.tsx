@@ -22,6 +22,7 @@ export default function SettingsPage() {
   const [username, setUsername] = useState("");
   const [originalUsername, setOriginalUsername] = useState("");
   const [profileImg, setProfileImg] = useState("");
+  const [bannerImg, setBannerImg] = useState("");
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -53,6 +54,7 @@ export default function SettingsPage() {
     setUsername(user.username || "");
     setOriginalUsername(user.username || "");
     setProfileImg(user.profileImg || "");
+    setBannerImg(user.bannerImg || "");
     setEmail(user.email || "");
   }, [user, userLoading, router]);
 
@@ -105,6 +107,7 @@ export default function SettingsPage() {
         name,
         username: username || null,
         profileImg: profileImg || null,
+        bannerImg: bannerImg || null,
       });
       setUser(res.data.user);
       setOriginalUsername(res.data.user.username || "");
@@ -209,6 +212,16 @@ export default function SettingsPage() {
         <form onSubmit={handleProfileSubmit} className="space-y-6">
           <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
             <h2 className="text-lg font-semibold text-gray-900">Profile</h2>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Banner
+              </label>
+              <ImageUploader
+                value={bannerImg ? resolveVoiceAssetUrl(bannerImg) : ""}
+                onChange={setBannerImg}
+                type="banner"
+              />
+            </div>
             <ImageUploader
               value={resolveVoiceAssetUrl(profileImg)}
               onChange={setProfileImg}

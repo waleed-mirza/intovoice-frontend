@@ -525,6 +525,18 @@ export const Save = createIcon("Save", [
   ["path", { d: "M7 3v4a1 1 0 0 0 1 1h7", key: "t51u73" }],
 ]);
 
+export const CassetteTape = createIcon("CassetteTape", [
+  ["rect", { width: "20", height: "16", x: "2", y: "4", rx: "2", key: "1r0s6z" }],
+  ["circle", { cx: "8", cy: "10", r: "2", key: "1v9bxd" }],
+  ["circle", { cx: "16", cy: "10", r: "2", key: "4m0vfa" }],
+  ["path", { d: "M6 12h12", key: "8w4w07" }],
+]);
+
+export const Send = createIcon("Send", [
+  ["path", { d: "M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z", key: "1ffxy3" }],
+  ["path", { d: "m21.854 2.147-10.94 10.939", key: "12hdau" }],
+]);
+
 // For CategoryChips iconMap: accepts both FC and ForwardRefExoticComponent
 export type VoiceIconComponent = React.ForwardRefExoticComponent<
   Omit<React.SVGProps<SVGSVGElement> & { size?: number }, "ref"> &

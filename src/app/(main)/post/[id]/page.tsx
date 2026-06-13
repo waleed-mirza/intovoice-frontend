@@ -14,8 +14,12 @@ import { useAuth } from "@/providers/AuthProvider";
 import useVoiceRecorder from "@/hooks/useVoiceRecorder";
 import useVoiceCommentSubmit from "@/components/voice/hooks/useVoiceCommentSubmit";
 import ReportModal from "@/components/reports/ReportModal";
-import CommentText from "@/components/comments/CommentText";
-import { FiFlag as ReportFlagIcon } from "react-icons/fi";
+import VoiceCommentCard from "@/components/comments/VoiceCommentCard";
+import {
+  removeCommentFromTree,
+  updateCommentInTree,
+} from "@/components/comments/commentTreeUtils";
+import type { VoiceComment } from "@/components/comments/voiceCommentTypes";
 import {
   Loader2,
   ThumbsUp,
@@ -32,9 +36,9 @@ import {
   ChevronDown,
   ChevronUp,
   Mic,
-  Trash2,
   X,
 } from "@/components/voice/VoiceIcons";
+import { FiFlag as ReportFlagIcon } from "react-icons/fi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,56 +73,7 @@ interface VoicePost {
   };
 }
 
-interface Comment {
-  id: string;
-  content: string;
-  audioFileURL?: string | null;
-  createdAt: string;
-  likeCount: number;
-  isLiked: boolean;
-  parentId?: string | null;
-  replyCount?: number;
-  replies?: Comment[];
-  author: {
-    id: string;
-    name: string;
-    profileImg?: string;
-    username?: string;
-  };
-}
-
-function updateCommentInTree(
-  comments: Comment[],
-  commentId: string,
-  patch: Partial<Pick<Comment, "isLiked" | "likeCount">>
-): Comment[] {
-  return comments.map((c) => {
-    if (c.id === commentId) {
-      return { ...c, ...patch };
-    }
-    if (c.replies?.some((r) => r.id === commentId)) {
-      return {
-        ...c,
-        replies: c.replies.map((r) => (r.id === commentId ? { ...r, ...patch } : r)),
-      };
-    }
-    return c;
-  });
-}
-
-function removeCommentFromTree(comments: Comment[], commentId: string): Comment[] {
-  return comments
-    .filter((c) => c.id !== commentId)
-    .map((c) => {
-      const hadReply = c.replies?.some((r) => r.id === commentId);
-      if (!hadReply) return c;
-      return {
-        ...c,
-        replies: c.replies!.filter((r) => r.id !== commentId),
-        replyCount: Math.max(0, (c.replyCount ?? c.replies!.length) - 1),
-      };
-    });
-}
+interface Comment extends VoiceComment {}
 
 // ─── Compact Audio Player for voice comments ──────────────────────────────────
 
@@ -258,196 +213,6 @@ const CommentAudioPlayer = ({ src }: { src: string }) => {
           />
         ))}
       </div>
-    </div>
-  );
-};
-
-// ─── Comment action button ────────────────────────────────────────────────────
-
-const CommentActionButton = ({
-  onClick,
-  disabled,
-  active,
-  danger,
-  title,
-  ariaLabel,
-  children,
-}: {
-  onClick: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  danger?: boolean;
-  title?: string;
-  ariaLabel?: string;
-  children: React.ReactNode;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    title={title}
-    aria-label={ariaLabel}
-    className={`inline-flex items-center justify-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium transition-all duration-150 disabled:opacity-50 disabled:pointer-events-none ${
-      active
-        ? "bg-gray-100 text-gray-900"
-        : danger
-        ? "text-gray-500 hover:bg-red-50 hover:text-red-600"
-        : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-    }`}
-  >
-    {children}
-  </button>
-);
-
-// ─── Comment Card ─────────────────────────────────────────────────────────────
-
-const CommentCard = ({
-  comment,
-  currentUserId,
-  stationOwnerId,
-  isReply,
-  onLike,
-  onDelete,
-  onReply,
-}: {
-  comment: Comment;
-  currentUserId?: string;
-  stationOwnerId?: string;
-  isReply?: boolean;
-  onLike: (id: string) => void;
-  onDelete: (id: string) => void;
-  onReply?: () => void;
-}) => {
-  const isOwn = currentUserId === comment.author.id;
-  const canDelete = currentUserId === comment.author.id || currentUserId === stationOwnerId;
-  const canReport = Boolean(currentUserId) && !isOwn;
-  const [deleting, setDeleting] = useState(false);
-  const [reportOpen, setReportOpen] = useState(false);
-
-  const handleDelete = async () => {
-    if (deleting) return;
-    setDeleting(true);
-    await onDelete(comment.id);
-    setDeleting(false);
-  };
-
-  const audioSrc = comment.audioFileURL
-    ? resolveVoiceAssetUrl(comment.audioFileURL)
-    : null;
-
-  return (
-    <div className={`flex gap-3 ${isReply ? "ml-8 sm:ml-10 pl-3 border-l border-gray-200" : ""}`}>
-      {/* Avatar */}
-      <div className="flex-shrink-0">
-        {comment.author.profileImg ? (
-          <img
-            src={comment.author.profileImg}
-            alt={comment.author.name}
-            className="w-9 h-9 rounded-full object-cover"
-          />
-        ) : (
-          <div className="w-9 h-9 rounded-full bg-gray-800 flex items-center justify-center text-white font-semibold text-sm">
-            {comment.author.name?.charAt(0).toUpperCase()}
-          </div>
-        )}
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        {/* Author + time */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-semibold text-gray-900">
-            {comment.author.name}
-          </span>
-          {isOwn && (
-            <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded-full font-medium">
-              You
-            </span>
-          )}
-          <span className="text-xs text-gray-400">{formatTimeAgo(comment.createdAt)}</span>
-        </div>
-
-        {/* Text content */}
-        {comment.content && comment.content.trim() && comment.content.trim() !== " " && (
-          <CommentText
-            text={comment.content}
-            className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap break-words"
-          />
-        )}
-
-        {/* Voice comment audio player */}
-        {audioSrc && <CommentAudioPlayer src={audioSrc} />}
-
-        {/* Actions row — primary left, moderation right */}
-        <div className="flex items-center justify-between gap-2 mt-3 pt-0.5">
-          <div className="flex items-center gap-0.5">
-            <CommentActionButton
-              onClick={() => onLike(comment.id)}
-              active={comment.isLiked}
-              ariaLabel={comment.isLiked ? "Unlike comment" : "Like comment"}
-              title={comment.isLiked ? "Unlike" : "Like"}
-            >
-              <ThumbsUp className={`w-3.5 h-3.5 ${comment.isLiked ? "fill-current" : ""}`} />
-              {comment.likeCount > 0 && <span>{comment.likeCount}</span>}
-            </CommentActionButton>
-
-            {onReply && (
-              <CommentActionButton
-                onClick={onReply}
-                ariaLabel="Reply to comment"
-                title="Reply"
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>Reply</span>
-              </CommentActionButton>
-            )}
-          </div>
-
-          {(canDelete || canReport) && (
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {canDelete && (
-                <CommentActionButton
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  danger
-                  ariaLabel="Delete comment"
-                  title="Delete comment"
-                >
-                  {deleting ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Trash2 className="w-3.5 h-3.5" />
-                  )}
-                  <span className="hidden sm:inline">Delete</span>
-                </CommentActionButton>
-              )}
-
-              {canReport && (
-                <CommentActionButton
-                  onClick={() => setReportOpen(true)}
-                  danger
-                  ariaLabel="Report comment"
-                  title="Report comment"
-                >
-                  <ReportFlagIcon className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Report</span>
-                </CommentActionButton>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <ReportModal
-        isOpen={reportOpen}
-        onClose={() => setReportOpen(false)}
-        targetType="voice_comment"
-        targetId={comment.id}
-        targetPreview={
-          (comment.content || "").trim().slice(0, 140) ||
-          (comment.audioFileURL ? "🎙️ Voice comment" : undefined)
-        }
-      />
     </div>
   );
 };
@@ -865,6 +630,10 @@ const PostPage = () => {
     }
   }, []);
 
+  const handleUpdateComment = useCallback((commentId: string, content: string) => {
+    setComments((prev) => updateCommentInTree(prev, commentId, { content }));
+  }, []);
+
   // ── Mute toggle ──
   const handleToggleMute = () => {
     const audio = audioRef.current;
@@ -1213,53 +982,69 @@ const PostPage = () => {
                       </div>
                     )}
 
-                    {/* Mic button */}
-                    <button
-                      type="button"
-                      onClick={isRecording && isLocked ? onStopLockedRecording : undefined}
-                      {...(isRecording && isLocked ? {} : micHandlers)}
-                      onTouchStart={(e) => { micHandlers.onPointerDown?.(e as unknown as React.PointerEvent); }}
-                      onTouchMove={(e) => { micHandlers.onPointerMove?.(e as unknown as React.PointerEvent); }}
-                      onTouchEnd={(e) => {
-                        micHandlers.onPointerUp?.(e as unknown as React.PointerEvent);
-                        if (isRecording && !isLocked) stopRecording();
-                      }}
-                      onPointerMove={(e) => { micHandlers.onPointerMove?.(e); }}
-                      onPointerUp={(e) => {
-                        micHandlers.onPointerUp?.(e);
-                        if (isRecording && !isLocked) stopRecording();
-                      }}
-                      onPointerCancel={(e) => {
-                        micHandlers.onPointerUp?.(e);
-                        if (isRecording && !isLocked) stopRecording();
-                      }}
-                      disabled={isSending || hasText}
-                      style={{ touchAction: "none" }}
-                      onContextMenu={(e) => e.preventDefault()}
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                        isRecording
-                          ? "bg-red-500 text-white shadow-lg scale-110"
-                          : hasText
-                          ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                          : "bg-black hover:bg-gray-800 text-white shadow-md active:scale-95"
-                      } ${isSending ? "opacity-60 cursor-not-allowed" : ""}`}
-                      aria-label={
-                        isRecording && isLocked
-                          ? "Stop recording"
-                          : hasText
-                          ? "Clear text to record"
-                          : "Hold to record voice comment"
-                      }
-                    >
-                      {isRecording && isLocked ? (
-                        /* Stop icon when locked */
+                    {/* Mic / locked stop button */}
+                    {isRecording && isLocked ? (
+                      <button
+                        type="button"
+                        onPointerUp={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void onStopLockedRecording({ force: true });
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            void onStopLockedRecording({ force: true });
+                          }
+                        }}
+                        disabled={isSending}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 bg-red-500 text-white shadow-lg scale-110 ${
+                          isSending ? "opacity-60 cursor-not-allowed" : ""
+                        }`}
+                        aria-label="Stop recording"
+                      >
                         <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                           <path d="M6 6a1 1 0 011-1h6a1 1 0 011 1v8a1 1 0 01-1 1H7a1 1 0 01-1-1V6z" />
                         </svg>
-                      ) : (
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        {...micHandlers}
+                        onTouchStart={(e) => { micHandlers.onPointerDown?.(e as unknown as React.PointerEvent); }}
+                        onTouchMove={(e) => { micHandlers.onPointerMove?.(e as unknown as React.PointerEvent); }}
+                        onTouchEnd={(e) => {
+                          micHandlers.onPointerUp?.(e as unknown as React.PointerEvent);
+                          if (isRecording && !isLocked) stopRecording();
+                        }}
+                        onPointerMove={(e) => { micHandlers.onPointerMove?.(e); }}
+                        onPointerUp={(e) => {
+                          micHandlers.onPointerUp?.(e);
+                          if (isRecording && !isLocked) stopRecording();
+                        }}
+                        onPointerCancel={(e) => {
+                          micHandlers.onPointerUp?.(e);
+                          if (isRecording && !isLocked) stopRecording();
+                        }}
+                        disabled={isSending || hasText}
+                        style={{ touchAction: "none" }}
+                        onContextMenu={(e) => e.preventDefault()}
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+                          isRecording
+                            ? "bg-red-500 text-white shadow-lg scale-110"
+                            : hasText
+                            ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            : "bg-black hover:bg-gray-800 text-white shadow-md active:scale-95"
+                        } ${isSending ? "opacity-60 cursor-not-allowed" : ""}`}
+                        aria-label={
+                          hasText
+                            ? "Clear text to record"
+                            : "Hold to record voice comment"
+                        }
+                      >
                         <Mic className="w-4 h-4" />
-                      )}
-                    </button>
+                      </button>
+                    )}
 
                     {/* Send button */}
                     <button
@@ -1349,12 +1134,13 @@ const PostPage = () => {
               ) : (
                 comments.map((comment) => (
                   <div key={comment.id} className="space-y-3">
-                    <CommentCard
+                    <VoiceCommentCard
                       comment={comment}
                       currentUserId={user?.id}
-                      stationOwnerId={post.station.user.id}
+                      ownerUserId={post.station.user.id}
                       onLike={handleCommentLike}
                       onDelete={handleDeleteComment}
+                      onUpdate={handleUpdateComment}
                       onReply={
                         user
                           ? () => handleStartReply(comment.id, comment.author.name)
@@ -1362,14 +1148,15 @@ const PostPage = () => {
                       }
                     />
                     {(comment.replies ?? []).map((reply) => (
-                      <CommentCard
+                      <VoiceCommentCard
                         key={reply.id}
                         comment={reply}
                         isReply
                         currentUserId={user?.id}
-                        stationOwnerId={post.station.user.id}
+                        ownerUserId={post.station.user.id}
                         onLike={handleCommentLike}
                         onDelete={handleDeleteComment}
+                        onUpdate={handleUpdateComment}
                         onReply={
                           user
                             ? () => handleStartReply(comment.id, reply.author.name)

@@ -5,6 +5,8 @@ import React, { useEffect, useRef } from "react";
 interface WaveformProps {
   isPlaying: boolean;
   color?: string;
+  /** Max bar height as a fraction of canvas height (default 0.42) */
+  maxHeightRatio?: number;
 }
 
 interface Bar {
@@ -13,7 +15,7 @@ interface Bar {
   targetHeight: number;
 }
 
-const Waveform: React.FC<WaveformProps> = ({ isPlaying, color = "#111827" }) => {
+const Waveform: React.FC<WaveformProps> = ({ isPlaying, color = "#111827", maxHeightRatio = 0.42 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const barsRef = useRef<Bar[]>([]);
@@ -143,10 +145,10 @@ const Waveform: React.FC<WaveformProps> = ({ isPlaying, color = "#111827" }) => 
 
           // Calculate "music" target height
           // Base height + (Energy * Noise * MaxHeight)
-          const musicHeight = 4 + (zoneEnergy * noise * (height * 0.42)); // Max 42% height (60% of original 70%)
-          
+          const musicHeight = 4 + (zoneEnergy * noise * (height * maxHeightRatio));
+
           // Apply "Kick" effect to all bars slightly
-          const kick = energyRef.current.bass * 0.12 * height;
+          const kick = energyRef.current.bass * 0.12 * height * Math.min(1, maxHeightRatio / 0.42);
           
           bar.targetHeight = Math.max(0, musicHeight + kick);
         });
@@ -202,7 +204,7 @@ const Waveform: React.FC<WaveformProps> = ({ isPlaying, color = "#111827" }) => 
       window.removeEventListener("resize", resize);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isPlaying, color]);
+  }, [isPlaying, color, maxHeightRatio]);
 
   return <canvas ref={canvasRef} className="w-full h-full block" />;
 };

@@ -23,7 +23,7 @@ interface UseVoiceRecorderSubmitState {
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<Blob | null>;
   discardVoice: () => Promise<void>;
-  onStopLockedRecording: () => Promise<void>;
+  onStopLockedRecording: (options?: { force?: boolean }) => Promise<void>;
   micBind: ReturnType<typeof useDrag>;
   formatSeconds: (s: number) => string;
   triggerMaxReachedTooltip: () => void;
@@ -425,7 +425,8 @@ const useVoiceRecorder = (
         }
 
         if (isLocked || lockProgressRef.current >= 1) {
-          lockRecording();
+          // Already locked — end the hold gesture without re-locking (would refresh cooldown).
+          setIsPressingMic(false);
           gestureActiveRef.current = false;
           return;
         }
@@ -462,12 +463,19 @@ const useVoiceRecorder = (
     ignoreCurrentGestureRef.current = false;
   }, [micBind]);
 
-  const onStopLockedRecording = useCallback(async () => {
-    if (lockedAtRef.current && Date.now() - lockedAtRef.current < 800) {
+  const onStopLockedRecording = useCallback(async (options?: { force?: boolean }) => {
+    if (
+      !options?.force &&
+      lockedAtRef.current &&
+      Date.now() - lockedAtRef.current < 800
+    ) {
       return;
     }
 
-    if (!isRecording) {
+    const recorder = mediaRecorderRef.current;
+    const isActuallyRecording =
+      isRecording || recorder?.state === "recording" || recorder?.state === "paused";
+    if (!isActuallyRecording) {
       return;
     }
     await stopRecording();

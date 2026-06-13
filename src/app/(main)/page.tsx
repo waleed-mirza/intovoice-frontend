@@ -6,6 +6,7 @@ import Link from "next/link";
 import PostSlider from "@/components/voice/PostSlider";
 import CategoryChips from "@/components/voice/CategoryChips";
 import VoicePostCard from "@/components/voice/VoicePostCard";
+import TapeCard from "@/components/tapes/TapeCard";
 import Api from "@/lib/axios";
 import { ensureVoiceCategories } from "@/utils/voiceHelpers";
 import { useAuth } from "@/providers/AuthProvider";
@@ -37,6 +38,8 @@ interface Station {
   _count?: { posts: number; subscriptions: number };
 }
 
+import type { Tape } from "@/types/tapes";
+
 interface Category {
   id: string;
   name: string;
@@ -47,11 +50,14 @@ interface Category {
 interface SearchResults {
   posts: VoicePost[];
   stations: Station[];
+  tapes: Tape[];
   pagination: {
     totalPosts: number;
     totalStations: number;
+    totalTapes: number;
     hasMorePosts: boolean;
     hasMoreStations: boolean;
+    hasMoreTapes: boolean;
   };
 }
 
@@ -76,7 +82,7 @@ function VoiceHomeContent() {
   const [hasStation, setHasStation] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [searchType, setSearchType] = useState<"all" | "posts" | "stations">("all");
+  const [searchType, setSearchType] = useState<"all" | "posts" | "stations" | "tapes">("all");
 
   useEffect(() => {
     if (user) {
@@ -252,8 +258,8 @@ function VoiceHomeContent() {
           </button>
         </div>
 
-        <div className="flex gap-2 mb-6">
-          {(["all", "posts", "stations"] as const).map((type) => (
+        <div className="flex gap-2 mb-6 flex-wrap">
+          {(["all", "posts", "stations", "tapes"] as const).map((type) => (
             <button
               key={type}
               onClick={() => setSearchType(type)}
@@ -263,7 +269,11 @@ function VoiceHomeContent() {
                   : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              {type === "posts" ? "Audios" : type.charAt(0).toUpperCase() + type.slice(1)}
+              {type === "posts"
+                ? "Audios"
+                : type === "tapes"
+                  ? "Tapes"
+                  : type.charAt(0).toUpperCase() + type.slice(1)}
             </button>
           ))}
         </div>
@@ -302,7 +312,23 @@ function VoiceHomeContent() {
                 </section>
               )}
 
-            {searchResults.posts.length === 0 && searchResults.stations.length === 0 && (
+            {(searchType === "all" || searchType === "tapes") &&
+              (searchResults.tapes?.length ?? 0) > 0 && (
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">
+                    Tapes ({searchResults.pagination.totalTapes})
+                  </h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {searchResults.tapes.map((tape) => (
+                      <TapeCard key={tape.id} tape={tape} compact />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+            {searchResults.posts.length === 0 &&
+              searchResults.stations.length === 0 &&
+              (searchResults.tapes?.length ?? 0) === 0 && (
               <div className="flex flex-col items-center justify-center py-16 text-center">
                 <Search className="w-16 h-16 text-gray-300 mb-4" />
                 <h2 className="text-xl font-semibold text-gray-900 mb-2">No results found</h2>
