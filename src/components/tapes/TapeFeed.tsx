@@ -10,9 +10,23 @@ import TapeSlide from "./TapeSlide";
 import TapeCommentsPanel from "./TapeCommentsPanel";
 import type { Tape } from "@/types/tapes";
 import { TAPE_FEED_SHELL, TAPE_SLIDE_SHELL } from "@/utils/tapeLayout";
+import {
+  GLOBAL_TAPE_FEED,
+  mergeTapeByRecency,
+  tapeMatchesFeedSource,
+  feedSourceKey,
+  tapeHref,
+  type TapeFeedSource,
+} from "@/utils/tapeFeedSource";
+import {
+  TAPE_FEED_PAGE_SIZE,
+  TAPE_FEED_PREFETCH_REMAINING,
+} from "@/utils/tapeFeedConstants";
+import { consumeTapeFeedSeed } from "@/utils/tapeFeedCache";
 
 interface TapeFeedProps {
   initialTapeId?: string;
+  feedSource?: TapeFeedSource;
 }
 
 const VIEWED_KEY = "tape_views_session";
@@ -34,18 +48,62 @@ function markViewed(id: string) {
   sessionStorage.setItem(VIEWED_KEY, JSON.stringify(Array.from(set)));
 }
 
-export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
+async function fetchFeedPage(source: TapeFeedSource, pageNum: number, limit: number) {
+  switch (source.type) {
+    case "user":
+      return Api.get(`/voice/tape/user/${source.userId}`, {
+        params: { page: pageNum, limit },
+      });
+    case "station":
+      return Api.get(`/voice/tape/station/${source.stationId}`, {
+        params: { page: pageNum, limit },
+      });
+    default:
+      return Api.get("/voice/tape/feed", { params: { page: pageNum, limit } });
+  }
+}
+
+function feedCacheKey(source: TapeFeedSource, tapeId?: string) {
+  return `${feedSourceKey(source)}:${tapeId ?? ""}`;
+}
+
+export default function TapeFeed({
+  initialTapeId,
+  feedSource = GLOBAL_TAPE_FEED,
+}: TapeFeedProps) {
   const router = useRouter();
   const { user } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
   const slideRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const touchStartRef = useRef<{ y: number; x: number; scrollTop: number } | null>(null);
-  const [tapes, setTapes] = useState<Tape[]>([]);
-  const [loading, setLoading] = useState(true);
+  const prefetchingRef = useRef(false);
+  const seedCacheRef = useRef<{
+    key: string;
+    seed: ReturnType<typeof consumeTapeFeedSeed>;
+  } | null>(null);
+
+  const resolveSeed = useCallback(
+    (source: TapeFeedSource, tapeId?: string) => {
+      const key = feedCacheKey(source, tapeId);
+      if (seedCacheRef.current?.key === key) return seedCacheRef.current.seed;
+      const seed =
+        source.type !== "global" ? consumeTapeFeedSeed(source, tapeId) : null;
+      seedCacheRef.current = { key, seed };
+      return seed;
+    },
+    []
+  );
+
+  const bootSeed = resolveSeed(feedSource, initialTapeId);
+
+  const [tapes, setTapes] = useState<Tape[]>(() => bootSeed?.tapes ?? []);
+  const [loading, setLoading] = useState(() => !bootSeed);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [page, setPage] = useState(() => bootSeed?.page ?? 1);
+  const [hasMore, setHasMore] = useState(() => bootSeed?.hasMore ?? true);
+  const [activeId, setActiveId] = useState<string | null>(() =>
+    bootSeed ? initialTapeId ?? bootSeed.tapes[0]?.id ?? null : null
+  );
   const [commentsTapeId, setCommentsTapeId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -70,40 +128,58 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
     setCommentsTapeId((id) => (id === tapeId ? null : id));
   }, []);
 
-  const loadFeed = useCallback(async (pageNum: number, append: boolean) => {
-    try {
-      if (append) setLoadingMore(true);
-      else {
-        setLoading(true);
-        setLoadError(null);
-      }
+  const loadFeed = useCallback(
+    async (pageNum: number, append: boolean, ensureTapeId?: string) => {
+      try {
+        if (append) setLoadingMore(true);
+        else {
+          setLoading(true);
+          setLoadError(null);
+        }
 
-      const res = await Api.get("/voice/tape/feed", {
-        params: { page: pageNum, limit: 10 },
-      });
-      const batch: Tape[] = res.data.result || [];
-      const pagination = res.data.pagination;
+        const res = await fetchFeedPage(feedSource, pageNum, TAPE_FEED_PAGE_SIZE);
+        let batch: Tape[] = res.data.result || [];
+        const pagination = res.data.pagination;
 
-      setTapes((prev) => {
-        if (!append) return batch;
-        const ids = new Set(prev.map((t) => t.id));
-        return [...prev, ...batch.filter((t) => !ids.has(t.id))];
-      });
-      if (!append && batch.length > 0) {
-        setActiveId((current) => current ?? batch[0].id);
+        if (!append && ensureTapeId && !batch.some((t) => t.id === ensureTapeId)) {
+          try {
+            const tapeRes = await Api.get(`/voice/tape/${ensureTapeId}`);
+            const tape: Tape = tapeRes.data.result;
+            if (
+              feedSource.type === "global" ||
+              tapeMatchesFeedSource(tape, feedSource)
+            ) {
+              batch = mergeTapeByRecency(batch, tape);
+            }
+          } catch {
+            console.error("Tape not found for deep link");
+          }
+        }
+
+        setTapes((prev) => {
+          if (!append) return batch;
+          const ids = new Set(prev.map((t) => t.id));
+          return [...prev, ...batch.filter((t) => !ids.has(t.id))];
+        });
+        if (!append) {
+          setActiveId((current) =>
+            batch.length > 0 ? ensureTapeId ?? current ?? batch[0].id : current
+          );
+        }
+        setHasMore(pagination?.hasMore ?? false);
+        setPage(pageNum);
+      } catch (err) {
+        console.error("Failed to load tapes:", err);
+        if (!append) {
+          setLoadError("Could not load tapes. Check your connection and try again.");
+        }
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
       }
-      setHasMore(pagination?.hasMore ?? false);
-      setPage(pageNum);
-    } catch (err) {
-      console.error("Failed to load tapes:", err);
-      if (!append) {
-        setLoadError("Could not load tapes. Check your connection and try again.");
-      }
-    } finally {
-      setLoading(false);
-      setLoadingMore(false);
-    }
-  }, []);
+    },
+    [feedSource]
+  );
 
   useEffect(() => {
     const prevOverflow = document.body.style.overflow;
@@ -114,25 +190,36 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
   }, []);
 
   useEffect(() => {
-    const init = async () => {
-      await loadFeed(1, false);
+    let cancelled = false;
+    prefetchingRef.current = false;
 
-      if (initialTapeId) {
-        try {
-          const res = await Api.get(`/voice/tape/${initialTapeId}`);
-          const tape: Tape = res.data.result;
-          setTapes((prev) => {
-            if (prev.some((t) => t.id === tape.id)) return prev;
-            return [tape, ...prev];
-          });
-          setActiveId(tape.id);
-        } catch {
-          console.error("Tape not found for deep link");
-        }
+    const initialize = async () => {
+      setLoadError(null);
+      const seed = resolveSeed(feedSource, initialTapeId);
+
+      if (seed && !cancelled) {
+        setTapes(seed.tapes);
+        setPage(seed.page);
+        setHasMore(seed.hasMore);
+        setActiveId(initialTapeId ?? seed.tapes[0]?.id ?? null);
+        setLoading(false);
+        return;
       }
+
+      if (cancelled) return;
+      setTapes([]);
+      setPage(1);
+      setHasMore(true);
+      setActiveId(null);
+      setLoading(true);
+      await loadFeed(1, false, initialTapeId);
     };
-    init();
-  }, [initialTapeId, loadFeed]);
+
+    initialize();
+    return () => {
+      cancelled = true;
+    };
+  }, [feedSource, initialTapeId, loadFeed, resolveSeed]);
 
   useEffect(() => {
     if (!initialTapeId || tapes.length === 0) return;
@@ -142,6 +229,16 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
       setActiveId(initialTapeId);
     }
   }, [initialTapeId, tapes]);
+
+  // Keep the URL in sync with the visible tape (shareable link, no full navigation).
+  useEffect(() => {
+    if (!activeId || typeof window === "undefined") return;
+    const next = tapeHref(activeId, feedSource);
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (current !== next) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [activeId, feedSource]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -167,11 +264,14 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
   }, [tapes]);
 
   useEffect(() => {
-    if (!hasMore || loadingMore || !activeId) return;
+    if (!hasMore || loadingMore || prefetchingRef.current || !activeId) return;
     const idx = tapes.findIndex((t) => t.id === activeId);
-    if (idx >= tapes.length - 3) {
-      loadFeed(page + 1, true);
-    }
+    if (idx < 0 || idx < tapes.length - TAPE_FEED_PREFETCH_REMAINING) return;
+
+    prefetchingRef.current = true;
+    void loadFeed(page + 1, true).finally(() => {
+      prefetchingRef.current = false;
+    });
   }, [activeId, tapes, hasMore, loadingMore, page, loadFeed]);
 
   useEffect(() => {
@@ -265,6 +365,19 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
     <div className={TAPE_FEED_SHELL}>{content}</div>
   );
 
+  const isUserFeed = feedSource.type === "user";
+  const isStationFeed = feedSource.type === "station";
+  const isScopedFeed = isUserFeed || isStationFeed;
+
+  const feedTitle = isUserFeed
+    ? "Personal Tapes"
+    : isStationFeed
+      ? "Station Tapes"
+      : "Tapes";
+  const feedSubtitle = isScopedFeed
+    ? "Scroll up or down through this creator's clips"
+    : "Scroll up or down for the next clip";
+
   if (loading) {
     return feedShell(
       <div className="flex-1 flex items-center justify-center">
@@ -281,7 +394,7 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
         <p className="text-gray-500 mb-6 max-w-sm text-sm">{loadError}</p>
         <button
           type="button"
-          onClick={() => loadFeed(1, false)}
+          onClick={() => loadFeed(1, false, initialTapeId)}
           className="px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors font-medium text-sm"
         >
           Try again
@@ -294,11 +407,18 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
     return feedShell(
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
         <CassetteTape className="w-16 h-16 text-gray-300 mb-4" />
-        <h2 className="text-xl font-semibold text-gray-900 mb-2">No tapes yet</h2>
+        <h2 className="text-xl font-semibold text-gray-900 mb-2">
+          {isScopedFeed ? "No tapes here" : "No tapes yet"}
+        </h2>
         <p className="text-gray-500 mb-6 max-w-sm text-sm">
-          Short audio clips up to 59 seconds. Be the first to publish a tape.
+          {isUserFeed
+            ? "This creator hasn't published personal tapes yet."
+            : isStationFeed
+              ? "This station doesn't have any tapes yet."
+              : "Short audio clips up to 59 seconds. Be the first to publish a tape."}
         </p>
-        {user ? (
+        {!isScopedFeed && (
+          user ? (
           <Link
             href="/tapes/upload"
             className="inline-flex items-center gap-2 px-6 py-2.5 bg-black text-white rounded-full hover:bg-gray-800 transition-colors font-medium text-sm"
@@ -314,6 +434,7 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
           >
             Sign in to create
           </button>
+        )
         )}
       </div>
     );
@@ -326,15 +447,14 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
   return (
     <>
       <div className={TAPE_FEED_SHELL}>
+        <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
         {/* Desktop/tablet feed header */}
         <div className="absolute top-0 inset-x-0 z-30 hidden md:flex items-center justify-between px-4 py-3 bg-gradient-to-b from-gray-50 from-0% via-gray-50/25 via-45% to-transparent to-85% pointer-events-none">
           <div className="pointer-events-auto min-w-0">
-            <h1 className="text-sm font-bold text-gray-900 tracking-tight">Tapes</h1>
-            <p className="text-[11px] text-gray-500">
-              Scroll up or down for the next clip
-            </p>
+            <h1 className="text-sm font-bold text-gray-900 tracking-tight">{feedTitle}</h1>
+            <p className="text-[11px] text-gray-500">{feedSubtitle}</p>
           </div>
-          {user && (
+          {user && !isScopedFeed && (
             <Link
               href="/tapes/upload"
               className="pointer-events-auto inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-black text-white rounded-full text-xs font-medium hover:bg-gray-800 transition-colors"
@@ -346,7 +466,7 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
         </div>
 
         {/* Mobile: floating create only */}
-        {user && (
+        {user && !isScopedFeed && (
           <Link
             href="/tapes/upload"
             className="md:hidden absolute top-3 left-3 z-30 inline-flex items-center gap-1.5 px-3 py-1.5 bg-black/80 backdrop-blur-sm text-white rounded-full text-xs font-medium hover:bg-black transition-colors shadow-md"
@@ -414,18 +534,17 @@ export default function TapeFeed({ initialTapeId }: TapeFeedProps) {
             <ChevronDown className="w-5 h-5" />
           </button>
         </div>
-      </div>
 
-      {commentsTape && (
-        <div className="md:hidden">
+        {commentsTape && (
           <TapeCommentsPanel
-            variant="sheet"
+            variant="overlay"
             tape={commentsTape}
             onClose={() => setCommentsTapeId(null)}
             onCommentCountChange={(delta) => handleCommentCountChange(commentsTape.id, delta)}
           />
+        )}
         </div>
-      )}
+      </div>
 
       <style jsx global>{`
         .tape-feed-scroll {

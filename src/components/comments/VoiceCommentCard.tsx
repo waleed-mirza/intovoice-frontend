@@ -10,6 +10,7 @@ import {
   MoreVertical,
   Pencil,
 } from "@/components/voice/VoiceIcons";
+import ConfirmModal from "@/components/ConfirmModal";
 import ReportModal from "@/components/reports/ReportModal";
 import CommentText from "@/components/comments/CommentText";
 import CommentAudioPlayer from "@/components/comments/CommentAudioPlayer";
@@ -180,6 +181,7 @@ export default function VoiceCommentCard({
   const showMenu = canEdit || canDelete || canReport;
 
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(comment.content || "");
@@ -188,10 +190,10 @@ export default function VoiceCommentCard({
 
   const handleDelete = async () => {
     if (deleting) return;
-    if (!confirm("Delete this comment?")) return;
     setDeleting(true);
     await onDelete(comment.id);
     setDeleting(false);
+    setDeleteConfirmOpen(false);
   };
 
   const handleStartEdit = () => {
@@ -276,7 +278,7 @@ export default function VoiceCommentCard({
               canReport={canReport}
               deleting={deleting}
               onEdit={handleStartEdit}
-              onDelete={handleDelete}
+              onDelete={() => setDeleteConfirmOpen(true)}
               onReport={() => setReportOpen(true)}
             />
           )}
@@ -350,6 +352,17 @@ export default function VoiceCommentCard({
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        onConfirm={handleDelete}
+        title="Delete comment?"
+        description="This comment will be permanently removed."
+        confirmLabel="Delete"
+        confirming={deleting}
+        destructive
+      />
 
       <ReportModal
         isOpen={reportOpen}

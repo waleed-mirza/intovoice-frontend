@@ -181,19 +181,13 @@ export default function VoiceCommentComposer({
                     : "Add a comment…"
             }
             maxLength={1000}
-            className={`w-full px-3 py-2.5 rounded-full text-sm border transition-all resize-none overflow-y-auto min-h-[40px] leading-5 focus:outline-none focus:ring-2 focus:ring-gray-300 ${
+            className={`w-full px-3 py-2.5 rounded-xl text-sm border transition-all resize-none overflow-y-auto min-h-[40px] leading-5 focus:outline-none focus:ring-2 focus:ring-gray-300 ${
               compact ? "max-h-24" : "max-h-40"
             } ${
               recordedBlob
                 ? "bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed"
                 : "bg-white border-gray-300"
             }`}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
           />
         </div>
 
@@ -370,12 +364,6 @@ export default function VoiceCommentComposer({
             </div>
           )}
         </div>
-      )}
-
-      {!isRecording && !recordedBlob && !hasText && (
-        <p className="text-[11px] text-gray-400 mt-2 px-1">
-          Hold the mic to record, then review before posting
-        </p>
       )}
     </div>
   );

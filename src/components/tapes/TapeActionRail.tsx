@@ -556,7 +556,7 @@ export default function TapeActionRail({
               {liking ? (
                 <Loader2 className={`${glyphSize} animate-spin`} />
               ) : tape.isLiked ? (
-                <HiHandThumbUp className={`${glyphSize} text-gray-900`} />
+                <HiHandThumbUp className={`${glyphSize} text-red-500`} />
               ) : (
                 <HiOutlineHandThumbUp className={glyphSize} />
               )}

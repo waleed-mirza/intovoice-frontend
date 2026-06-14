@@ -18,6 +18,8 @@ import {
   Settings,
 } from "@/components/voice/VoiceIcons";
 import type { Tape } from "@/types/tapes";
+import { TAPE_FEED_PAGE_SIZE } from "@/utils/tapeFeedConstants";
+import { setTapeFeedSeed } from "@/utils/tapeFeedCache";
 
 interface UserStation {
   id: string;
@@ -79,7 +81,7 @@ export default function UserProfilePage() {
         else setTapesLoading(true);
 
         const res = await Api.get(`/voice/tape/user/${userId}`, {
-          params: { page: pageNum, limit: 20 },
+          params: { page: pageNum, limit: TAPE_FEED_PAGE_SIZE },
         });
         const batch: Tape[] = res.data.result || [];
         const pagination = res.data.pagination;
@@ -107,6 +109,19 @@ export default function UserProfilePage() {
       loadTapes(1, false);
     }
   }, [activeTab, tapesLoaded, userId, loadTapes]);
+
+  const userFeedSource = { type: "user" as const, userId };
+
+  const cacheTapeFeedSeed = useCallback(() => {
+    if (tapes.length === 0) return;
+    setTapeFeedSeed(userFeedSource, { tapes, page, hasMore });
+  }, [tapes, page, hasMore, userId]);
+
+  useEffect(() => {
+    if (activeTab === "tapes" && tapesLoaded && tapes.length > 0) {
+      setTapeFeedSeed(userFeedSource, { tapes, page, hasMore });
+    }
+  }, [activeTab, tapes, tapesLoaded, page, hasMore, userId]);
 
   const isOwner = !!(authUser?.id && profile?.id && authUser.id === profile.id);
 
@@ -366,7 +381,13 @@ export default function UserProfilePage() {
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {tapes.map((tape) => (
-                <TapeCard key={tape.id} tape={tape} compact />
+                <TapeCard
+                  key={tape.id}
+                  tape={tape}
+                  compact
+                  feedSource={userFeedSource}
+                  onBeforeNavigate={cacheTapeFeedSeed}
+                />
               ))}
             </div>
             {hasMore && (

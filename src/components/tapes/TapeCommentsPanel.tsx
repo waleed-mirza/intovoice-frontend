@@ -40,9 +40,9 @@ interface TapeCommentsPanelProps {
 
   onCommentCountChange: (delta: number) => void;
 
-  /** embedded = beside player (desktop); sheet = bottom overlay (mobile) */
+  /** embedded = beside player (desktop); overlay = bottom sheet over tape (mobile) */
 
-  variant: "embedded" | "sheet";
+  variant: "embedded" | "overlay" | "sheet";
 
 }
 
@@ -128,7 +128,7 @@ export default function TapeCommentsPanel({
 
   useEffect(() => {
 
-    if (variant !== "sheet") return;
+    if (variant !== "overlay" && variant !== "sheet") return;
 
     const onKey = (e: KeyboardEvent) => {
 
@@ -552,7 +552,7 @@ export default function TapeCommentsPanel({
 
           onSend={handleSend}
 
-          compact={variant === "embedded"}
+          compact={variant === "embedded" || variant === "overlay"}
 
         />
 
@@ -629,6 +629,60 @@ export default function TapeCommentsPanel({
         >
 
           {panelBody}
+
+        </div>
+
+        {scrollbarStyles}
+
+      </>
+
+    );
+
+  }
+
+
+
+  if (variant === "overlay") {
+
+    return (
+
+      <>
+
+        <div className="md:hidden absolute inset-0 z-40 flex flex-col justify-end pointer-events-none">
+
+          <button
+
+            type="button"
+
+            className="flex-1 min-h-0 w-full pointer-events-auto"
+
+            onClick={onClose}
+
+            aria-label="Close comments"
+
+          />
+
+          <div
+
+            className="relative pointer-events-auto flex flex-col min-h-0 overflow-hidden bg-white rounded-t-2xl shadow-2xl max-h-[min(52dvh,480px)] w-full flex-shrink-0"
+
+            role="dialog"
+
+            aria-label="Comments"
+
+            aria-modal="true"
+
+          >
+
+            <div className="flex flex-col items-center pt-2.5 pb-1 flex-shrink-0">
+
+              <div className="w-10 h-1 rounded-full bg-gray-300" aria-hidden />
+
+            </div>
+
+            {panelBody}
+
+          </div>
 
         </div>
 

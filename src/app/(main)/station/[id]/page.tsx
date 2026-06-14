@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Image from "next/image";
 import VoicePostCard from "@/components/voice/VoicePostCard";
@@ -19,6 +19,8 @@ import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { getCategoryDisplayName } from "@/utils/voiceHelpers";
 import Link from "next/link";
 import type { Tape } from "@/types/tapes";
+import { TAPE_FEED_PAGE_SIZE } from "@/utils/tapeFeedConstants";
+import { setTapeFeedSeed } from "@/utils/tapeFeedCache";
 
 interface Station {
   id: string;
@@ -88,7 +90,7 @@ export default function StationPage() {
     try {
       setTapesLoading(true);
       const res = await Api.get(`/voice/tape/station/${id}`, {
-        params: { page: pageNum, limit: 12 },
+        params: { page: pageNum, limit: TAPE_FEED_PAGE_SIZE },
       });
       const batch: Tape[] = res.data.result || [];
       setTapes((prev) => (append ? [...prev, ...batch] : batch));
@@ -108,6 +110,23 @@ export default function StationPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, id, tapesLoaded]);
+
+  const stationFeedSource = { type: "station" as const, stationId: id };
+
+  const cacheTapeFeedSeed = useCallback(() => {
+    if (tapes.length === 0) return;
+    setTapeFeedSeed(stationFeedSource, { tapes, page: tapesPage, hasMore: tapesHasMore });
+  }, [tapes, tapesPage, tapesHasMore, id]);
+
+  useEffect(() => {
+    if (activeTab === "tapes" && tapesLoaded && tapes.length > 0) {
+      setTapeFeedSeed(stationFeedSource, {
+        tapes,
+        page: tapesPage,
+        hasMore: tapesHasMore,
+      });
+    }
+  }, [activeTab, tapes, tapesLoaded, tapesPage, tapesHasMore, id]);
 
   const loadMorePosts = async () => {
     if (!hasMore || !id) return;
@@ -395,7 +414,13 @@ export default function StationPage() {
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {tapes.map((tape) => (
-                <TapeCard key={tape.id} tape={tape} compact />
+                <TapeCard
+                  key={tape.id}
+                  tape={tape}
+                  compact
+                  feedSource={stationFeedSource}
+                  onBeforeNavigate={cacheTapeFeedSeed}
+                />
               ))}
             </div>
             {tapesHasMore && (

@@ -264,26 +264,26 @@ export default function TapeSlide({
     onTapeDelete,
   };
 
-  const showEmbeddedComments = commentsOpen && isActive;
+  const showDesktopEmbeddedComments = commentsOpen && isActive;
 
   return (
     <div
       className={`flex flex-1 min-h-0 w-full h-full ${
-        showEmbeddedComments ? "" : "md:items-center"
+        showDesktopEmbeddedComments ? "" : "md:items-center"
       }`}
     >
       <div
-        className={`flex flex-1 min-h-0 w-full mx-auto ${
-          showEmbeddedComments
-            ? "items-start max-w-[min(100%,52rem)] lg:max-w-[min(100%,58rem)] md:px-4 md:py-6 lg:py-8"
-            : "items-stretch md:items-center md:justify-center md:px-4 md:py-6 lg:py-8"
+        className={`flex flex-1 min-h-0 w-full mx-auto items-stretch ${
+          showDesktopEmbeddedComments
+            ? "md:items-start md:max-w-[min(100%,52rem)] lg:max-w-[min(100%,58rem)] md:px-4 md:py-6 lg:py-8"
+            : "md:items-center md:justify-center md:px-4 md:py-6 lg:py-8"
         }`}
       >
         <div
-          className={`flex min-h-0 w-full gap-0 md:gap-4 ${
-            showEmbeddedComments
-              ? "items-start max-w-full"
-              : "items-stretch md:items-center md:justify-center md:max-w-[min(100%,28rem)] md:mx-auto"
+          className={`flex min-h-0 w-full gap-0 md:gap-4 items-stretch ${
+            showDesktopEmbeddedComments
+              ? "md:items-start md:max-w-full"
+              : "md:items-center md:justify-center md:max-w-[min(100%,28rem)] md:mx-auto"
           }`}
         >
           {/* Player column */}
@@ -505,7 +505,7 @@ export default function TapeSlide({
             <div
               className="hidden md:flex flex-col justify-center flex-shrink-0 self-center"
               style={
-                showEmbeddedComments && playerColumnHeight
+                showDesktopEmbeddedComments && playerColumnHeight
                   ? { height: playerColumnHeight }
                   : undefined
               }
@@ -517,7 +517,7 @@ export default function TapeSlide({
           )}
 
           {/* Desktop: inline comments beside player */}
-          {showEmbeddedComments && playerColumnHeight != null && (
+          {showDesktopEmbeddedComments && playerColumnHeight != null && (
             <div
               className="hidden md:flex flex-shrink-0 self-start min-h-0 overflow-hidden"
               style={{ height: playerColumnHeight }}

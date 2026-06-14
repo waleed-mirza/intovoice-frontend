@@ -6,18 +6,27 @@ import Image from "next/image";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { formatDuration } from "@/utils/voiceHelpers";
 import type { Tape } from "@/types/tapes";
+import { tapeHref, type TapeFeedSource } from "@/utils/tapeFeedSource";
 
 interface TapeCardProps {
   tape: Tape;
   compact?: boolean;
+  feedSource?: TapeFeedSource;
+  onBeforeNavigate?: () => void;
 }
 
-export default function TapeCard({ tape, compact = false }: TapeCardProps) {
+export default function TapeCard({
+  tape,
+  compact = false,
+  feedSource,
+  onBeforeNavigate,
+}: TapeCardProps) {
   const creatorName = tape.station?.name ?? tape.user.username ?? tape.user.name;
 
   return (
     <Link
-      href={`/tapes/${tape.id}`}
+      href={tapeHref(tape.id, feedSource)}
+      onClick={() => onBeforeNavigate?.()}
       className={`group block overflow-hidden rounded-xl bg-white border border-gray-200 hover:border-gray-300 transition-colors ${
         compact ? "" : "shadow-sm hover:shadow-md"
       }`}
