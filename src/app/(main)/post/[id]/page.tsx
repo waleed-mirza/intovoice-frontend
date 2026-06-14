@@ -8,7 +8,7 @@ import Waveform from "@/components/voice/Waveform";
 import VoicePostCard from "@/components/voice/VoicePostCard";
 import Api from "@/lib/axios";
 import voice from "@/utils/voiceTheme";
-import { formatDuration, formatTimeAgo } from "@/utils/voiceHelpers";
+import { formatDuration } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { useAuth } from "@/providers/AuthProvider";
 import useVoiceRecorder from "@/hooks/useVoiceRecorder";
@@ -73,7 +73,7 @@ interface VoicePost {
   };
 }
 
-interface Comment extends VoiceComment {}
+type Comment = VoiceComment;
 
 // ─── Compact Audio Player for voice comments ──────────────────────────────────
 
