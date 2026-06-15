@@ -7,6 +7,7 @@ import VoicePostCard from "@/components/voice/VoicePostCard";
 import CategoryChips from "@/components/voice/CategoryChips";
 import Api from "@/lib/axios";
 import { ensureVoiceCategories, getCategoryDisplayName } from "@/utils/voiceHelpers";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { Compass, Loader2, Radio, TrendingUp, Users } from "@/components/voice/VoiceIcons";
 
 interface VoicePost {
@@ -135,7 +136,7 @@ export default function ExplorePage() {
                 >
                   {station.avatarURL ? (
                     <Image
-                      src={station.avatarURL}
+                      src={resolveVoiceAssetUrl(station.avatarURL)}
                       alt={station.name}
                       width={64}
                       height={64}

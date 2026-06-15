@@ -414,7 +414,7 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
                     >
                       {station.avatarURL ? (
                         <Image
-                          src={station.avatarURL}
+                          src={resolveVoiceAssetUrl(station.avatarURL)}
                           alt={station.name}
                           width={24}
                           height={24}

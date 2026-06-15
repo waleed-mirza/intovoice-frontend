@@ -96,4 +96,4 @@ export function getMediaDuration(file: File): Promise<number> {
 export const POST_MEDIA_ACCEPT = "audio/*,video/*";
 
 export const POST_MEDIA_HINT =
-  "Audio or video files (MP3, WAV, MP4, MOV, etc.). Video uploads save audio only.";
+  "Audio or video files (MP3, WAV, MP4, MOV, etc.). Video is converted to MP3; other audio uploads as-is when supported.";

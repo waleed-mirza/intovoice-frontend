@@ -1,6 +1,6 @@
 import { useState } from "react";
-import axios from "axios";
 import Api from "@/lib/axios";
+import { uploadFileToS3 } from "@/lib/uploadFileToS3";
 
 interface UseVoiceCommentSubmitOptions<T = unknown> {
   postId?: string;
@@ -27,6 +27,8 @@ const useVoiceCommentSubmit = <T = unknown>({
   onSuccess,
 }: UseVoiceCommentSubmitOptions<T>) => {
   const [isSending, setIsSending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadPhase, setUploadPhase] = useState<"uploading" | null>(null);
 
   const submitComment = async ({
     text,
@@ -43,6 +45,9 @@ const useVoiceCommentSubmit = <T = unknown>({
     const targetId = tapeId || postId;
 
     setIsSending(true);
+    setUploadProgress(0);
+    setUploadPhase(null);
+
     try {
       let blobToSend: Blob | null = recordedBlob;
       if (isRecording) {
@@ -60,23 +65,17 @@ const useVoiceCommentSubmit = <T = unknown>({
         const extension = fileType.includes("ogg") ? "ogg" : "webm";
         const fileName = `voice-comment-${targetId}-${Date.now()}.${extension}`;
 
-        const signedUrlRes = await Api.get("/voice/upload/signed-url", {
-          params: {
-            fileName,
-            fileType,
-            uploadType: "voice-comment",
-          },
-        });
+        setUploadPhase("uploading");
 
-        const { signedUrl, fileUrl } = signedUrlRes.data;
+        const key = await uploadFileToS3(
+          blobToSend,
+          fileName,
+          fileType,
+          "voice-comment",
+          { onProgress: (p) => setUploadProgress(p.percent) }
+        );
 
-        await axios.put(signedUrl, blobToSend, {
-          headers: {
-            "Content-Type": fileType,
-          },
-        });
-
-        audioFileURL = fileUrl;
+        audioFileURL = key;
       }
 
       if (!trimmedText && !audioFileURL) {
@@ -100,10 +99,12 @@ const useVoiceCommentSubmit = <T = unknown>({
       return null;
     } finally {
       setIsSending(false);
+      setUploadProgress(0);
+      setUploadPhase(null);
     }
   };
 
-  return { isSending, submitComment };
+  return { isSending, uploadProgress, uploadPhase, submitComment };
 };
 
 export default useVoiceCommentSubmit;

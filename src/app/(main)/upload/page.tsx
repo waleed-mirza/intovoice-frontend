@@ -16,6 +16,9 @@ import {
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
+import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
   Loader2,
@@ -268,6 +271,7 @@ function UploadPageContent() {
       return;
     }
 
+    const uploadedKeys: string[] = [];
     try {
       setPublishing(true);
       setError(null);
@@ -275,12 +279,14 @@ function UploadPageContent() {
       let finalAudioURL = audioURL;
       if (thumbnailFile && !thumbnailURL) {
         finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
+        uploadedKeys.push(finalThumbnailURL);
         setThumbnailURL(finalThumbnailURL);
       }
       let finalDuration = duration;
       if (audioFile && !audioURL) {
         const uploadResult = await audioUpload.uploadPostMedia(audioFile);
-        finalAudioURL = uploadResult.fileUrl;
+        finalAudioURL = uploadResult.assetKey;
+        uploadedKeys.push(finalAudioURL);
         if (uploadResult.duration && uploadResult.duration > 0) {
           finalDuration = uploadResult.duration;
           setDuration(finalDuration);
@@ -297,6 +303,7 @@ function UploadPageContent() {
       });
       router.push(`/post/${res.data.result.id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } }; message?: string })
           ?.response?.data?.message ||
@@ -309,17 +316,31 @@ function UploadPageContent() {
   };
 
   const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
-  const isExtracting = audioUpload.extracting;
-  const isBusy = isUploading || isExtracting;
-  const overallProgress = (() => {
-    if (!isBusy) return null;
-    const thumbProgress = thumbnailUpload.progress?.percent || (thumbnailURL ? 100 : 0);
-    const audioProgress = audioUpload.progress?.percent || (audioURL ? 100 : 0);
-    const hasThumb = thumbnailFile || thumbnailURL;
-    const hasAudio = audioFile || audioURL;
-    if (hasThumb && hasAudio) return Math.round((thumbProgress + audioProgress) / 2);
-    return thumbProgress || audioProgress;
-  })();
+  const isConverting = audioUpload.converting;
+  const isBusy = isUploading || isConverting;
+  const uploadProgress = getCombinedUploadProgress(
+    {
+      uploading: thumbnailUpload.uploading,
+      converting: false,
+      progress: thumbnailUpload.progress,
+      progressPhase: thumbnailUpload.progressPhase,
+    },
+    {
+      uploading: audioUpload.uploading,
+      converting: audioUpload.converting,
+      progress: audioUpload.progress,
+      progressPhase: audioUpload.progressPhase,
+    },
+    {
+      hasThumbnail: Boolean(thumbnailFile || thumbnailURL),
+      hasAudio: Boolean(audioFile || audioURL),
+      thumbnailDone: Boolean(thumbnailURL),
+      audioDone: Boolean(audioURL),
+      audioFile,
+    }
+  );
+
+  const conversionLabel = getAudioConversionLabel(audioFile);
 
   if (userLoading || loading) {
     return (
@@ -495,7 +516,7 @@ function UploadPageContent() {
                         <div>
                           <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
                           <div className="text-sm text-gray-500">
-                            {needsAudioExtraction(audioFile) ? "Video (audio will be extracted) • " : ""}
+                            {needsAudioExtraction(audioFile) ? "Video (converted to MP3 on upload) • " : ""}
                             {formatFileSize(audioFile.size)}
                             {duration > 0 && ` • ${formatDuration(duration)}`}
                           </div>
@@ -620,19 +641,11 @@ function UploadPageContent() {
             </div>
           )}
 
-          {isBusy && overallProgress !== null && (
-            <div className="p-4 bg-gray-50 rounded-lg">
-              <div className="flex justify-between text-sm text-gray-700 mb-2">
-                <span>{isExtracting ? "Extracting audio from video..." : "Uploading files..."}</span>
-                <span>{overallProgress}%</span>
-              </div>
-              <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-black transition-all"
-                  style={{ width: `${overallProgress}%` }}
-                />
-              </div>
-            </div>
+          {isBusy && uploadProgress && (
+            <UploadProgressBar
+              label={uploadProgress.label}
+              percent={uploadProgress.percent}
+            />
           )}
 
           <button
@@ -654,7 +667,11 @@ function UploadPageContent() {
             {publishing || isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                {isExtracting ? "Extracting audio..." : isUploading ? "Uploading..." : "Publishing..."}
+                {isConverting
+                  ? conversionLabel
+                  : isUploading
+                    ? "Uploading..."
+                    : "Publishing..."}
               </>
             ) : (
               <>

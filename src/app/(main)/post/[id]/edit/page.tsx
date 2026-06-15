@@ -14,6 +14,9 @@ import {
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
+import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
   Loader2,
@@ -167,12 +170,16 @@ export default function EditPostPage() {
       setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
       return;
     }
+    const uploadedKeys: string[] = [];
     try {
       setSaving(true);
       setError(null);
       let finalThumbnailURL = post.thumbnailURL;
       if (thumbnailFile && !newThumbnailURL) {
-        finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
+        finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail", {
+          replaceKey: post.thumbnailURL,
+        });
+        uploadedKeys.push(finalThumbnailURL);
         setNewThumbnailURL(finalThumbnailURL);
       } else if (newThumbnailURL) {
         finalThumbnailURL = newThumbnailURL;
@@ -180,8 +187,11 @@ export default function EditPostPage() {
       let finalAudioURL = post.audioURL;
       let finalDuration = post.duration;
       if (audioFile && !newAudioURL) {
-        const uploadResult = await audioUpload.uploadPostMedia(audioFile);
-        finalAudioURL = uploadResult.fileUrl;
+        const uploadResult = await audioUpload.uploadPostMedia(audioFile, {
+          replaceKey: post.audioURL,
+        });
+        finalAudioURL = uploadResult.assetKey;
+        uploadedKeys.push(finalAudioURL);
         finalDuration = uploadResult.duration && uploadResult.duration > 0
           ? uploadResult.duration
           : newDuration;
@@ -200,6 +210,7 @@ export default function EditPostPage() {
       });
       router.push(`/post/${id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } }; message?: string })
           ?.response?.data?.message ||
@@ -212,8 +223,31 @@ export default function EditPostPage() {
   };
 
   const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
-  const isExtracting = audioUpload.extracting;
-  const isBusy = isUploading || isExtracting;
+  const isConverting = audioUpload.converting;
+  const isBusy = isUploading || isConverting;
+  const uploadProgress = getCombinedUploadProgress(
+    {
+      uploading: thumbnailUpload.uploading,
+      converting: false,
+      progress: thumbnailUpload.progress,
+      progressPhase: thumbnailUpload.progressPhase,
+    },
+    {
+      uploading: audioUpload.uploading,
+      converting: audioUpload.converting,
+      progress: audioUpload.progress,
+      progressPhase: audioUpload.progressPhase,
+    },
+    {
+      hasThumbnail: Boolean(thumbnailFile || newThumbnailURL || post?.thumbnailURL),
+      hasAudio: Boolean(audioFile || newAudioURL),
+      thumbnailDone: Boolean(newThumbnailURL),
+      audioDone: Boolean(newAudioURL),
+      audioFile,
+    }
+  );
+
+  const conversionLabel = getAudioConversionLabel(audioFile);
 
   if (userLoading || loading) {
     return (
@@ -319,7 +353,7 @@ export default function EditPostPage() {
               <div className="p-4 border border-gray-200 rounded-lg">
                 <div className="font-medium text-gray-900 truncate">{audioFile.name}</div>
                 {needsAudioExtraction(audioFile) && (
-                  <p className="text-sm text-gray-500 mt-1">Video selected — only audio will be saved.</p>
+                  <p className="text-sm text-gray-500 mt-1">Video selected — will be converted to MP3 on upload.</p>
                 )}
                 {newDuration > 0 && (
                   <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-green-50 text-green-700">
@@ -344,6 +378,13 @@ export default function EditPostPage() {
             </div>
           )}
 
+          {isBusy && uploadProgress && (
+            <UploadProgressBar
+              label={uploadProgress.label}
+              percent={uploadProgress.percent}
+            />
+          )}
+
           <button
             type="submit"
             disabled={
@@ -357,7 +398,11 @@ export default function EditPostPage() {
             {saving || isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                {isExtracting ? "Extracting audio..." : isUploading ? "Uploading..." : "Saving..."}
+                {isConverting
+                  ? conversionLabel
+                  : isUploading
+                    ? "Uploading..."
+                    : "Saving..."}
               </>
             ) : (
               <>

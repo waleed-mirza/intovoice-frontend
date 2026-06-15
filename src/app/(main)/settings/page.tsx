@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ImageUploader from "@/components/voice/ImageUploader";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import Api from "@/lib/axios";
-import { useAuth } from "@/providers/AuthProvider";
-import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import { resolveDeferredImageKey } from "@/lib/uploadDeferredImage";import { useAuth } from "@/providers/AuthProvider";
 import {
   Loader2,
   Check,
@@ -23,6 +24,12 @@ export default function SettingsPage() {
   const [originalUsername, setOriginalUsername] = useState("");
   const [profileImg, setProfileImg] = useState("");
   const [bannerImg, setBannerImg] = useState("");
+  const [profilePendingFile, setProfilePendingFile] = useState<File | null>(null);
+  const [bannerPendingFile, setBannerPendingFile] = useState<File | null>(null);
+  const [profileRemoved, setProfileRemoved] = useState(false);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("");
   const [email, setEmail] = useState("");
   const [emailPassword, setEmailPassword] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
@@ -99,26 +106,87 @@ export default function SettingsPage() {
       setProfileError("This username is already taken");
       return;
     }
+    const uploadedKeys: string[] = [];
     try {
       setProfileSaving(true);
       setProfileError(null);
       setProfileSuccess(null);
+
+      let finalProfileImg: string | null | undefined = profileImg || null;
+      let finalBannerImg: string | null | undefined = bannerImg || null;
+
+      if (profilePendingFile || profileRemoved) {
+        setUploadLabel(profilePendingFile ? "Uploading profile photo..." : "Updating profile photo...");
+        const profileResult = await resolveDeferredImageKey(
+          {
+            pendingFile: profilePendingFile,
+            committedKey: profileImg,
+            removed: profileRemoved,
+          },
+          "avatar",
+          profilePendingFile
+            ? (percent) =>
+                setUploadProgress(
+                  bannerPendingFile || bannerRemoved ? percent / 2 : percent
+                )
+            : undefined
+        );
+        uploadedKeys.push(...profileResult.uploadedKeys);
+        if (profilePendingFile || profileRemoved) {
+          finalProfileImg = profileResult.key ?? null;
+        }
+      }
+
+      if (bannerPendingFile || bannerRemoved) {
+        setUploadLabel(bannerPendingFile ? "Uploading banner..." : "Updating banner...");
+        const bannerResult = await resolveDeferredImageKey(
+          {
+            pendingFile: bannerPendingFile,
+            committedKey: bannerImg,
+            removed: bannerRemoved,
+          },
+          "banner",
+          bannerPendingFile
+            ? (percent) =>
+                setUploadProgress(
+                  profilePendingFile || profileRemoved ? 50 + percent / 2 : percent
+                )
+            : undefined
+        );
+        uploadedKeys.push(...bannerResult.uploadedKeys);
+        if (bannerPendingFile || bannerRemoved) {
+          finalBannerImg = bannerResult.key ?? null;
+        }
+      }
+
+      setUploadProgress(null);
+      setUploadLabel("");
+
       const res = await Api.patch("/auth/profile", {
         name,
         username: username || null,
-        profileImg: profileImg || null,
-        bannerImg: bannerImg || null,
+        ...(profilePendingFile || profileRemoved ? { profileImg: finalProfileImg } : {}),
+        ...(bannerPendingFile || bannerRemoved ? { bannerImg: finalBannerImg } : {}),
       });
       setUser(res.data.user);
       setOriginalUsername(res.data.user.username || "");
+      setProfileImg(res.data.user.profileImg || "");
+      setBannerImg(res.data.user.bannerImg || "");
+      setProfilePendingFile(null);
+      setBannerPendingFile(null);
+      setProfileRemoved(false);
+      setBannerRemoved(false);
       setProfileSuccess("Profile updated successfully");
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message || "Failed to update profile";
       setProfileError(message);
     } finally {
       setProfileSaving(false);
+      setUploadProgress(null);
+      setUploadLabel("");
     }
   };
 
@@ -217,14 +285,22 @@ export default function SettingsPage() {
                 Banner
               </label>
               <ImageUploader
-                value={bannerImg ? resolveVoiceAssetUrl(bannerImg) : ""}
-                onChange={setBannerImg}
+                value={bannerImg || ""}
+                onValueChange={setBannerImg}
+                pendingFile={bannerPendingFile}
+                onPendingFileChange={setBannerPendingFile}
+                removed={bannerRemoved}
+                onRemovedChange={setBannerRemoved}
                 type="banner"
               />
             </div>
             <ImageUploader
-              value={resolveVoiceAssetUrl(profileImg)}
-              onChange={setProfileImg}
+              value={profileImg || ""}
+              onValueChange={setProfileImg}
+              pendingFile={profilePendingFile}
+              onPendingFileChange={setProfilePendingFile}
+              removed={profileRemoved}
+              onRemovedChange={setProfileRemoved}
               type="avatar"
               className="w-32"
             />
@@ -278,6 +354,10 @@ export default function SettingsPage() {
               )}
             </div>
           </div>
+
+          {uploadProgress !== null && (
+            <UploadProgressBar label={uploadLabel || "Uploading images..."} percent={uploadProgress} />
+          )}
 
           {profileError && (
             <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-3">

@@ -1,143 +1,181 @@
 import { useState, useCallback } from "react";
-import Api from "@/lib/axios";
-import { extractAudioFromVideo } from "@/utils/extractAudioFromVideo";
-import { needsAudioExtraction } from "@/utils/voiceMediaUpload";
+import { uploadFileToS3 } from "@/lib/uploadFileToS3";
+import {
+  canUploadAudioDirectly,
+  preparePostAudioForUpload,
+} from "@/utils/preparePostAudio";
+import { mapConvertingProgress, mapUploadingProgress } from "@/utils/uploadProgress";
+import type { UploadProgress, UploadProgressPhase } from "@/utils/uploadProgress";
 
 export type UploadType = "thumbnail" | "audio" | "avatar" | "banner";
 
-interface UploadProgress {
-  loaded: number;
-  total: number;
-  percent: number;
-}
+export type { UploadProgress, UploadProgressPhase } from "@/utils/uploadProgress";
 
-interface UploadAudioResult {
-  fileUrl: string;
+export interface UploadAudioResult {
+  assetKey: string;
   duration?: number;
 }
 
 interface UseVoiceUploadReturn {
-  upload: (file: File, type: UploadType) => Promise<string>;
-  uploadPostMedia: (file: File) => Promise<UploadAudioResult>;
+  upload: (
+    file: File,
+    type: UploadType,
+    options?: { overallAfterConversion?: boolean; replaceKey?: string | null }
+  ) => Promise<string>;
+  uploadPostMedia: (
+    file: File,
+    options?: { replaceKey?: string | null }
+  ) => Promise<UploadAudioResult>;
   uploading: boolean;
+  converting: boolean;
+  /** @deprecated Use converting */
   extracting: boolean;
   progress: UploadProgress | null;
+  progressPhase: UploadProgressPhase;
   error: string | null;
   reset: () => void;
 }
 
 export const useVoiceUpload = (): UseVoiceUploadReturn => {
   const [uploading, setUploading] = useState(false);
-  const [extracting, setExtracting] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [progress, setProgress] = useState<UploadProgress | null>(null);
+  const [progressPhase, setProgressPhase] = useState<UploadProgressPhase>(null);
   const [error, setError] = useState<string | null>(null);
 
   const reset = useCallback(() => {
     setUploading(false);
-    setExtracting(false);
+    setConverting(false);
     setProgress(null);
+    setProgressPhase(null);
     setError(null);
   }, []);
 
-  const upload = useCallback(async (file: File, type: UploadType): Promise<string> => {
-    setUploading(true);
-    setProgress({ loaded: 0, total: file.size, percent: 0 });
-    setError(null);
+  const upload = useCallback(
+    async (
+      file: File,
+      type: UploadType,
+      options?: { overallAfterConversion?: boolean; replaceKey?: string | null }
+    ): Promise<string> => {
+      setUploading(true);
+      setProgressPhase("uploading");
+      setProgress({ loaded: 0, total: file.size, percent: 0 });
+      setError(null);
 
-    try {
-      const signedUrlRes = await Api.get("/voice/upload/signed-url", {
-        params: {
-          fileName: file.name,
-          fileType: file.type || "application/octet-stream",
-          uploadType: type,
-        },
-      });
+      const afterConversion = options?.overallAfterConversion ?? false;
 
-      const { signedUrl, fileUrl } = signedUrlRes.data;
-
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-
-        xhr.upload.addEventListener("progress", (event) => {
-          if (event.lengthComputable) {
-            setProgress({
-              loaded: event.loaded,
-              total: event.total,
-              percent: Math.round((event.loaded / event.total) * 100),
-            });
+      try {
+        const key = await uploadFileToS3(
+          file,
+          file.name,
+          file.type || "application/octet-stream",
+          type,
+          {
+            replaceKey: options?.replaceKey,
+            onProgress: (p) => {
+              setProgress({
+                loaded: p.loaded,
+                total: p.total,
+                percent: mapUploadingProgress(p.percent, afterConversion),
+              });
+            },
           }
+        );
+
+        setProgress({
+          loaded: file.size,
+          total: file.size,
+          percent: mapUploadingProgress(100, afterConversion),
         });
+        setUploading(false);
+        setProgressPhase(null);
 
-        xhr.addEventListener("load", () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            reject(new Error(`Upload failed with status ${xhr.status}`));
-          }
-        });
-
-        xhr.addEventListener("error", () => {
-          reject(new Error("Upload failed"));
-        });
-
-        xhr.open("PUT", signedUrl);
-        xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
-        xhr.send(file);
-      });
-
-      setProgress({ loaded: file.size, total: file.size, percent: 100 });
-      setUploading(false);
-
-      return fileUrl;
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { message?: string } }; message?: string };
-      const errorMessage = axiosErr.response?.data?.message || axiosErr.message || "Upload failed";
-      setError(errorMessage);
-      setUploading(false);
-      throw new Error(errorMessage);
-    }
-  }, []);
+        return key;
+      } catch (err: unknown) {
+        const axiosErr = err as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+        const errorMessage =
+          axiosErr.response?.data?.message || axiosErr.message || "Upload failed";
+        setError(errorMessage);
+        setUploading(false);
+        setProgressPhase(null);
+        throw new Error(errorMessage);
+      }
+    },
+    []
+  );
 
   const uploadPostMedia = useCallback(
-    async (file: File): Promise<UploadAudioResult> => {
+    async (
+      file: File,
+      options?: { replaceKey?: string | null }
+    ): Promise<UploadAudioResult> => {
       setError(null);
 
       try {
         let audioFile = file;
         let duration: number | undefined;
+        const needsConversion = !canUploadAudioDirectly(file);
 
-        if (needsAudioExtraction(file)) {
-          setExtracting(true);
+        if (needsConversion) {
+          setConverting(true);
+          setProgressPhase("converting");
           setProgress({ loaded: 0, total: 100, percent: 0 });
 
-          const extracted = await extractAudioFromVideo(file, (percent) => {
-            setProgress({ loaded: percent, total: 100, percent });
+          const converted = await preparePostAudioForUpload(file, (phasePercent) => {
+            setProgress({
+              loaded: phasePercent,
+              total: 100,
+              percent: mapConvertingProgress(phasePercent),
+            });
           });
 
-          audioFile = extracted.file;
-          duration = extracted.duration;
-          setExtracting(false);
+          audioFile = converted.file;
+          duration = converted.duration;
+          setConverting(false);
+          setProgress({
+            loaded: 100,
+            total: 100,
+            percent: mapConvertingProgress(100),
+          });
         }
 
-        const fileUrl = await upload(audioFile, "audio");
-        return { fileUrl, duration };
+        const assetKey = await upload(audioFile, "audio", {
+          overallAfterConversion: needsConversion,
+          replaceKey: options?.replaceKey,
+        });
+
+        return { assetKey, duration };
       } catch (err: unknown) {
         const axiosErr = err as { message?: string };
         const errorMessage =
           axiosErr.message ||
-          (needsAudioExtraction(file)
-            ? "Failed to extract audio from video"
+          (!canUploadAudioDirectly(file)
+            ? "Failed to prepare audio for upload"
             : "Upload failed");
         setError(errorMessage);
-        setExtracting(false);
+        setConverting(false);
         setUploading(false);
+        setProgressPhase(null);
         throw new Error(errorMessage);
       }
     },
     [upload]
   );
 
-  return { upload, uploadPostMedia, uploading, extracting, progress, error, reset };
+  return {
+    upload,
+    uploadPostMedia,
+    uploading,
+    converting,
+    extracting: converting,
+    progress,
+    progressPhase,
+    error,
+    reset,
+  };
 };
 
 export default useVoiceUpload;

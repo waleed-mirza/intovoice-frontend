@@ -3,7 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ImageUploader from "@/components/voice/ImageUploader";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import Api from "@/lib/axios";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import { resolveDeferredImageKey } from "@/lib/uploadDeferredImage";
 import { useAuth } from "@/providers/AuthProvider";
 import { Loader2, Check, X } from "@/components/voice/VoiceIcons";
 import Image from "next/image";
@@ -57,6 +60,10 @@ export default function CreateStationPage() {
   const [categoryId, setCategoryId] = useState("");
   const [avatarURL, setAvatarURL] = useState("");
   const [bannerURL, setBannerURL] = useState("");
+  const [avatarPendingFile, setAvatarPendingFile] = useState<File | null>(null);
+  const [bannerPendingFile, setBannerPendingFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [handleAvailable, setHandleAvailable] = useState<boolean | null>(null);
   const [checkingHandle, setCheckingHandle] = useState(false);
@@ -150,25 +157,61 @@ export default function CreateStationPage() {
       setError("This handle is already taken");
       return;
     }
+    const uploadedKeys: string[] = [];
     try {
       setCreating(true);
       setError(null);
+
+      let finalAvatarURL = avatarURL || undefined;
+      let finalBannerURL = bannerURL || undefined;
+
+      if (avatarPendingFile) {
+        setUploadLabel("Uploading avatar...");
+        const avatarResult = await resolveDeferredImageKey(
+          { pendingFile: avatarPendingFile, committedKey: "", removed: false },
+          "avatar",
+          (percent) => setUploadProgress(avatarPendingFile && bannerPendingFile ? percent / 2 : percent)
+        );
+        uploadedKeys.push(...avatarResult.uploadedKeys);
+        finalAvatarURL = avatarResult.key || undefined;
+      }
+
+      if (bannerPendingFile) {
+        setUploadLabel("Uploading banner...");
+        const bannerResult = await resolveDeferredImageKey(
+          { pendingFile: bannerPendingFile, committedKey: "", removed: false },
+          "banner",
+          (percent) =>
+            setUploadProgress(
+              avatarPendingFile ? 50 + percent / 2 : percent
+            )
+        );
+        uploadedKeys.push(...bannerResult.uploadedKeys);
+        finalBannerURL = bannerResult.key || undefined;
+      }
+
+      setUploadProgress(null);
+      setUploadLabel("");
+
       const res = await Api.post("/voice/station", {
         name,
         handle,
         description,
         categoryId: categoryId || undefined,
-        avatarURL: avatarURL || undefined,
-        bannerURL: bannerURL || undefined,
+        avatarURL: finalAvatarURL,
+        bannerURL: finalBannerURL,
       });
       router.push(`/station/${res.data.result.id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message || "Failed to create station";
       setError(message);
     } finally {
       setCreating(false);
+      setUploadProgress(null);
+      setUploadLabel("");
     }
   };
 
@@ -292,16 +335,28 @@ export default function CreateStationPage() {
             <label className="block text-sm font-medium text-gray-700 mb-2">Avatar</label>
             <ImageUploader
               value={avatarURL}
-              onChange={setAvatarURL}
+              onValueChange={setAvatarURL}
+              pendingFile={avatarPendingFile}
+              onPendingFileChange={setAvatarPendingFile}
               type="avatar"
               className="w-32"
             />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Banner</label>
-            <ImageUploader value={bannerURL} onChange={setBannerURL} type="banner" />
+            <ImageUploader
+              value={bannerURL}
+              onValueChange={setBannerURL}
+              pendingFile={bannerPendingFile}
+              onPendingFileChange={setBannerPendingFile}
+              type="banner"
+            />
           </div>
         </div>
+
+        {uploadProgress !== null && (
+          <UploadProgressBar label={uploadLabel || "Uploading images..."} percent={uploadProgress} />
+        )}
 
         {error && (
           <div className="p-4 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>

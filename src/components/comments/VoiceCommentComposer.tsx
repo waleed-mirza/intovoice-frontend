@@ -5,6 +5,7 @@ import Link from "next/link";
 import useVoiceRecorder from "@/hooks/useVoiceRecorder";
 import { Loader2, Mic, X } from "@/components/voice/VoiceIcons";
 import CommentAudioPlayer from "@/components/comments/CommentAudioPlayer";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import type { ReplyTarget } from "@/components/comments/voiceCommentTypes";
 
@@ -32,6 +33,8 @@ interface VoiceCommentComposerProps {
   replyingTo: ReplyTarget | null;
   onCancelReply: () => void;
   isSending: boolean;
+  uploadProgress?: number;
+  uploadPhase?: "uploading" | null;
   onSend: (args: VoiceCommentSubmitArgs) => Promise<boolean>;
   compact?: boolean;
 }
@@ -43,6 +46,8 @@ export default function VoiceCommentComposer({
   replyingTo,
   onCancelReply,
   isSending,
+  uploadProgress = 0,
+  uploadPhase = null,
   onSend,
   compact = false,
 }: VoiceCommentComposerProps) {
@@ -144,6 +149,14 @@ export default function VoiceCommentComposer({
             Cancel
           </button>
         </div>
+      )}
+
+      {isSending && uploadPhase === "uploading" && (
+        <UploadProgressBar
+          label="Uploading voice comment…"
+          percent={uploadProgress}
+          className="mb-2 py-2 px-0 bg-transparent"
+        />
       )}
 
       <div className="flex items-center gap-2">

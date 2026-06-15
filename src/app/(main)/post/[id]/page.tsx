@@ -12,6 +12,7 @@ import { formatDuration } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { useAuth } from "@/providers/AuthProvider";
 import useVoiceRecorder from "@/hooks/useVoiceRecorder";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import useVoiceCommentSubmit from "@/components/voice/hooks/useVoiceCommentSubmit";
 import ReportModal from "@/components/reports/ReportModal";
 import VoiceCommentCard from "@/components/comments/VoiceCommentCard";
@@ -295,7 +296,7 @@ const PostPage = () => {
     onPermissionDenied: () => console.warn("Microphone permission denied"),
   });
 
-  const { isSending, submitComment } = useVoiceCommentSubmit<Comment>({
+  const { isSending, uploadProgress, uploadPhase, submitComment } = useVoiceCommentSubmit<Comment>({
     postId: id,
     parentId: replyingTo?.threadRootId ?? null,
     maxRecordingSeconds: MAX_RECORDING_SECONDS,
@@ -913,13 +914,20 @@ const PostPage = () => {
                     </button>
                   </div>
                 )}
+                {isSending && uploadPhase === "uploading" && (
+                  <UploadProgressBar
+                    label="Uploading voice comment…"
+                    percent={uploadProgress}
+                    className="mb-2 py-2 px-0 bg-transparent"
+                  />
+                )}
                 {/* WhatsApp-style input bar */}
                 <div className="flex items-end gap-2">
                   {/* User avatar */}
                   <div className="flex-shrink-0 mb-0.5">
                     {user.profileImg ? (
                       <img
-                        src={user.profileImg}
+                        src={resolveVoiceAssetUrl(user.profileImg)}
                         alt={user.name}
                         className="w-8 h-8 rounded-full object-cover"
                       />

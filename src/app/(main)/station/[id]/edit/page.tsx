@@ -3,7 +3,10 @@
 import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import ImageUploader from "@/components/voice/ImageUploader";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import Api from "@/lib/axios";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import { resolveDeferredImageKey } from "@/lib/uploadDeferredImage";
 import { useAuth } from "@/providers/AuthProvider";
 import { Loader2, Check, X, Settings, AlertCircle, BarChart3 } from "@/components/voice/VoiceIcons";
 import Link from "next/link";
@@ -38,6 +41,12 @@ export default function EditStationPage() {
   const [categoryId, setCategoryId] = useState("");
   const [avatarURL, setAvatarURL] = useState("");
   const [bannerURL, setBannerURL] = useState("");
+  const [avatarPendingFile, setAvatarPendingFile] = useState<File | null>(null);
+  const [bannerPendingFile, setBannerPendingFile] = useState<File | null>(null);
+  const [avatarRemoved, setAvatarRemoved] = useState(false);
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadLabel, setUploadLabel] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -122,25 +131,80 @@ export default function EditStationPage() {
       setError("This handle is already taken");
       return;
     }
+    const uploadedKeys: string[] = [];
     try {
       setSaving(true);
       setError(null);
+
+      let finalAvatarURL: string | null | undefined = avatarURL || undefined;
+      let finalBannerURL: string | null | undefined = bannerURL || undefined;
+
+      if (avatarPendingFile || avatarRemoved) {
+        setUploadLabel(avatarPendingFile ? "Uploading avatar..." : "Updating avatar...");
+        const avatarResult = await resolveDeferredImageKey(
+          {
+            pendingFile: avatarPendingFile,
+            committedKey: avatarURL,
+            removed: avatarRemoved,
+          },
+          "avatar",
+          avatarPendingFile
+            ? (percent) =>
+                setUploadProgress(
+                  bannerPendingFile || bannerRemoved ? percent / 2 : percent
+                )
+            : undefined
+        );
+        uploadedKeys.push(...avatarResult.uploadedKeys);
+        if (avatarPendingFile || avatarRemoved) {
+          finalAvatarURL = avatarResult.key;
+        }
+      }
+
+      if (bannerPendingFile || bannerRemoved) {
+        setUploadLabel(bannerPendingFile ? "Uploading banner..." : "Updating banner...");
+        const bannerResult = await resolveDeferredImageKey(
+          {
+            pendingFile: bannerPendingFile,
+            committedKey: bannerURL,
+            removed: bannerRemoved,
+          },
+          "banner",
+          bannerPendingFile
+            ? (percent) =>
+                setUploadProgress(
+                  avatarPendingFile || avatarRemoved ? 50 + percent / 2 : percent
+                )
+            : undefined
+        );
+        uploadedKeys.push(...bannerResult.uploadedKeys);
+        if (bannerPendingFile || bannerRemoved) {
+          finalBannerURL = bannerResult.key;
+        }
+      }
+
+      setUploadProgress(null);
+      setUploadLabel("");
+
       await Api.put(`/voice/station/${id}`, {
         name,
         handle,
         description: description || undefined,
         categoryId: categoryId || undefined,
-        avatarURL: avatarURL || undefined,
-        bannerURL: bannerURL || undefined,
+        ...(avatarPendingFile || avatarRemoved ? { avatarURL: finalAvatarURL } : {}),
+        ...(bannerPendingFile || bannerRemoved ? { bannerURL: finalBannerURL } : {}),
       });
       router.push(`/station/${id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message || "Failed to update station";
       setError(message);
     } finally {
       setSaving(false);
+      setUploadProgress(null);
+      setUploadLabel("");
     }
   };
 
@@ -268,9 +332,30 @@ export default function EditStationPage() {
 
         <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-4">
           <h3 className="text-sm font-semibold text-gray-700">Branding</h3>
-          <ImageUploader value={avatarURL} onChange={setAvatarURL} type="avatar" className="w-32" />
-          <ImageUploader value={bannerURL} onChange={setBannerURL} type="banner" />
+          <ImageUploader
+            value={avatarURL}
+            onValueChange={setAvatarURL}
+            pendingFile={avatarPendingFile}
+            onPendingFileChange={setAvatarPendingFile}
+            removed={avatarRemoved}
+            onRemovedChange={setAvatarRemoved}
+            type="avatar"
+            className="w-32"
+          />
+          <ImageUploader
+            value={bannerURL}
+            onValueChange={setBannerURL}
+            pendingFile={bannerPendingFile}
+            onPendingFileChange={setBannerPendingFile}
+            removed={bannerRemoved}
+            onRemovedChange={setBannerRemoved}
+            type="banner"
+          />
         </div>
+
+        {uploadProgress !== null && (
+          <UploadProgressBar label={uploadLabel || "Uploading images..."} percent={uploadProgress} />
+        )}
 
         {error && (
           <div className="p-4 bg-red-50 text-red-700 rounded-xl text-sm flex items-center gap-3">

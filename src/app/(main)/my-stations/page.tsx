@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import Api from "@/lib/axios";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { useAuth } from "@/providers/AuthProvider";
 import { getCategoryDisplayName } from "@/utils/voiceHelpers";
 import {
@@ -144,7 +145,7 @@ export default function MyStationsPage() {
                 <div className="relative w-full aspect-[3/1] bg-gray-900">
                   {station.bannerURL && (
                     <Image
-                      src={station.bannerURL}
+                      src={resolveVoiceAssetUrl(station.bannerURL)}
                       alt=""
                       fill
                       sizes="(max-width: 1024px) 100vw, 1024px"
@@ -157,7 +158,7 @@ export default function MyStationsPage() {
                     {station.avatarURL ? (
                       <div className="w-16 h-16 rounded-full overflow-hidden border-4 border-white bg-white flex-shrink-0">
                         <Image
-                          src={station.avatarURL}
+                          src={resolveVoiceAssetUrl(station.avatarURL)}
                           alt={station.name}
                           width={64}
                           height={64}

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import Api from "@/lib/axios";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { useAuth } from "@/providers/AuthProvider";
 import {
   Loader2,
@@ -116,7 +117,7 @@ const TopPostItem = ({ post, rank }: { post: TopPost; rank: number }) => (
     <span className="text-lg font-bold text-gray-300 w-6">{rank}</span>
     <div className="w-12 h-12 rounded-lg overflow-hidden bg-gray-100 flex-shrink-0">
       {post.thumbnailURL ? (
-        <img src={post.thumbnailURL} alt={post.title} className="w-full h-full object-cover" />
+        <img src={resolveVoiceAssetUrl(post.thumbnailURL)} alt={post.title} className="w-full h-full object-cover" />
       ) : (
         <div className="w-full h-full flex items-center justify-center">
           <FileAudio className="w-5 h-5 text-gray-400" />
@@ -229,7 +230,7 @@ export default function AnalyticsPage() {
         <div className="flex items-center gap-3">
           {station.avatarURL ? (
             <img
-              src={station.avatarURL}
+              src={resolveVoiceAssetUrl(station.avatarURL)}
               alt={station.name}
               className="w-10 h-10 rounded-full object-cover"
             />

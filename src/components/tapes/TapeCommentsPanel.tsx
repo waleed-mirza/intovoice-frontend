@@ -82,7 +82,7 @@ export default function TapeCommentsPanel({
 
 
 
-  const { isSending, submitComment } = useVoiceCommentSubmit<VoiceComment>({
+  const { isSending, uploadProgress, uploadPhase, submitComment } = useVoiceCommentSubmit<VoiceComment>({
 
     tapeId: tape.id,
 
@@ -549,7 +549,8 @@ export default function TapeCommentsPanel({
           onCancelReply={() => setReplyingTo(null)}
 
           isSending={isSending}
-
+          uploadProgress={uploadProgress}
+          uploadPhase={uploadPhase}
           onSend={handleSend}
 
           compact={variant === "embedded" || variant === "overlay"}

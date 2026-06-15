@@ -9,6 +9,7 @@ import VoicePostCard from "@/components/voice/VoicePostCard";
 import TapeCard from "@/components/tapes/TapeCard";
 import Api from "@/lib/axios";
 import { ensureVoiceCategories } from "@/utils/voiceHelpers";
+import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { useAuth } from "@/providers/AuthProvider";
 import { Radio, Loader2, Search, X } from "@/components/voice/VoiceIcons";
 
@@ -199,7 +200,7 @@ function VoiceHomeContent() {
     >
       <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0">
         {station.avatarURL ? (
-          <img src={station.avatarURL} alt={station.name} className="w-full h-full object-cover" />
+          <img src={resolveVoiceAssetUrl(station.avatarURL)} alt={station.name} className="w-full h-full object-cover" />
         ) : (
           <Radio className="w-8 h-8 text-gray-500" />
         )}

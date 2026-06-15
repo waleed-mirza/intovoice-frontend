@@ -11,7 +11,9 @@ import {
   formatDuration,
 } from "@/utils/voiceHelpers";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
 import { TAPE_FORM_PAGE } from "@/utils/tapeLayout";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import { Loader2, AlertCircle, Save } from "@/components/voice/VoiceIcons";
 import type { Tape } from "@/types/tapes";
@@ -89,13 +91,17 @@ export default function EditTapePage() {
       return;
     }
 
+    const uploadedKeys: string[] = [];
     try {
       setSaving(true);
       setError(null);
 
       let finalThumbnailURL = tape.thumbnailURL;
       if (thumbnailFile && !newThumbnailURL) {
-        finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
+        finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail", {
+          replaceKey: tape.thumbnailURL,
+        });
+        uploadedKeys.push(finalThumbnailURL);
         setNewThumbnailURL(finalThumbnailURL);
       } else if (newThumbnailURL) {
         finalThumbnailURL = newThumbnailURL;
@@ -110,6 +116,7 @@ export default function EditTapePage() {
 
       router.push(`/tapes/${id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const message =
         (err as { response?: { data?: { message?: string } }; message?: string })
           ?.response?.data?.message ||
@@ -207,7 +214,13 @@ export default function EditTapePage() {
           </div>
         </div>
 
-        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none">
+        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3">
+          {thumbnailUpload.uploading && (
+            <UploadProgressBar
+              label="Uploading thumbnail…"
+              percent={thumbnailUpload.progress?.percent ?? 0}
+            />
+          )}
           <button
             type="submit"
             disabled={isBusy}
@@ -216,7 +229,7 @@ export default function EditTapePage() {
             {isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Saving…
+                {thumbnailUpload.uploading ? "Uploading..." : "Saving…"}
               </>
             ) : (
               <>

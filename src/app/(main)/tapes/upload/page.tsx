@@ -17,6 +17,9 @@ import {
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
 import { TAPE_FORM_PAGE } from "@/utils/tapeLayout";
+import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
+import UploadProgressBar from "@/components/voice/UploadProgressBar";
+import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import {
   Loader2,
@@ -228,6 +231,7 @@ export default function TapeUploadPage() {
       return;
     }
 
+    const uploadedKeys: string[] = [];
     try {
       setPublishing(true);
       setError(null);
@@ -237,12 +241,14 @@ export default function TapeUploadPage() {
 
       if (thumbnailFile && !thumbnailURL) {
         finalThumbnailURL = await thumbnailUpload.upload(thumbnailFile, "thumbnail");
+        uploadedKeys.push(finalThumbnailURL);
       }
 
       let finalDuration = publishDuration;
       if (publishAudioFile && !audioURL) {
         const uploadResult = await audioUpload.uploadPostMedia(publishAudioFile);
-        finalAudioURL = uploadResult.fileUrl;
+        finalAudioURL = uploadResult.assetKey;
+        uploadedKeys.push(finalAudioURL);
         if (uploadResult.duration && uploadResult.duration > 0) {
           finalDuration = Math.min(Math.floor(uploadResult.duration), MAX_DURATION);
         }
@@ -263,6 +269,7 @@ export default function TapeUploadPage() {
 
       router.push(`/tapes/${res.data.result.id}`);
     } catch (err: unknown) {
+      await releaseUploadedAssets(uploadedKeys);
       const axiosErr = err as {
         response?: { status?: number; data?: { message?: string } };
         message?: string;
@@ -295,11 +302,34 @@ export default function TapeUploadPage() {
     );
   }
 
+  const isUploading = thumbnailUpload.uploading || audioUpload.uploading;
+  const isConverting = audioUpload.converting;
   const isBusy =
-    publishing ||
-    thumbnailUpload.uploading ||
-    audioUpload.uploading ||
-    audioUpload.extracting;
+    publishing || isUploading || isConverting;
+
+  const uploadProgress = getCombinedUploadProgress(
+    {
+      uploading: thumbnailUpload.uploading,
+      converting: false,
+      progress: thumbnailUpload.progress,
+      progressPhase: thumbnailUpload.progressPhase,
+    },
+    {
+      uploading: audioUpload.uploading,
+      converting: audioUpload.converting,
+      progress: audioUpload.progress,
+      progressPhase: audioUpload.progressPhase,
+    },
+    {
+      hasThumbnail: Boolean(thumbnailFile || thumbnailURL),
+      hasAudio: Boolean(audioFile || audioURL),
+      thumbnailDone: Boolean(thumbnailURL),
+      audioDone: Boolean(audioURL),
+      audioFile,
+    }
+  );
+
+  const conversionLabel = getAudioConversionLabel(audioFile);
 
   return (
     <div className={TAPE_FORM_PAGE}>
@@ -538,7 +568,13 @@ export default function TapeUploadPage() {
           )}
         </div>
 
-        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none">
+        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3">
+          {isBusy && uploadProgress && (
+            <UploadProgressBar
+              label={uploadProgress.label}
+              percent={uploadProgress.percent}
+            />
+          )}
           <button
             type="submit"
             disabled={isBusy}
@@ -547,7 +583,11 @@ export default function TapeUploadPage() {
             {isBusy ? (
               <>
                 <Loader2 className="w-5 h-5 animate-spin" />
-                Publishing...
+                {isConverting
+                  ? conversionLabel
+                  : isUploading
+                    ? "Uploading..."
+                    : "Publishing..."}
               </>
             ) : (
               "Publish tape"
