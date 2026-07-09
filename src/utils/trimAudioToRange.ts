@@ -59,7 +59,7 @@ async function trimWithMediaRecorder(
   const preferVideo = needsAudioExtraction(sourceFile) || isVideoMediaFile(sourceFile);
   const clipDuration = Math.max(0.5, endSeconds - startSeconds);
 
-  let audioContext: AudioContext | null = null;
+  const audioCtxRef: { current: AudioContext | null } = { current: null };
 
   try {
     return await new Promise<TrimAudioResult>((resolve, reject) => {
@@ -111,7 +111,8 @@ async function trimWithMediaRecorder(
               .webkitAudioContext;
           if (!AudioCtx) throw new Error("Web Audio is not available");
 
-          audioContext = new AudioCtx();
+          const audioContext = new AudioCtx();
+          audioCtxRef.current = audioContext;
           if (audioContext.state === "suspended") {
             await audioContext.resume();
           }
@@ -236,8 +237,9 @@ async function trimWithMediaRecorder(
     });
   } finally {
     URL.revokeObjectURL(objectUrl);
-    if (audioContext && audioContext.state !== "closed") {
-      await audioContext.close().catch(() => undefined);
+    const ctx = audioCtxRef.current;
+    if (ctx && ctx.state !== "closed") {
+      await ctx.close().catch(() => undefined);
     }
   }
 }
