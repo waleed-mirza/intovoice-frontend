@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Api from "@/lib/axios";
 import { useAuth } from "@/providers/AuthProvider";
@@ -18,6 +18,22 @@ import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
 import { Loader2, AlertCircle, Save } from "@/components/voice/VoiceIcons";
 import type { Tape } from "@/types/tapes";
 
+type FieldErrorKey = "caption" | "thumbnail" | "form";
+type FieldErrors = Partial<Record<FieldErrorKey, string>>;
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      className="mt-2 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
+    >
+      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
 export default function EditTapePage() {
   const router = useRouter();
   const params = useParams();
@@ -27,13 +43,43 @@ export default function EditTapePage() {
   const [tape, setTape] = useState<Tape | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [caption, setCaption] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [thumbnailPreview, setThumbnailPreview] = useState("");
   const [newThumbnailURL, setNewThumbnailURL] = useState("");
 
+  const captionFieldRef = useRef<HTMLDivElement>(null);
+  const thumbnailFieldRef = useRef<HTMLDivElement>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
+
   const thumbnailUpload = useVoiceUpload();
+
+  const clearFieldError = (key: FieldErrorKey) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const showFieldError = (key: FieldErrorKey, message: string) => {
+    setFieldErrors({ [key]: message });
+  };
+
+  useEffect(() => {
+    const key = (Object.keys(fieldErrors)[0] as FieldErrorKey | undefined) ?? null;
+    if (!key) return;
+    const target =
+      key === "caption"
+        ? captionFieldRef.current
+        : key === "thumbnail"
+          ? thumbnailFieldRef.current
+          : formErrorRef.current;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [fieldErrors]);
 
   const loadTape = async () => {
     try {
@@ -47,7 +93,7 @@ export default function EditTapePage() {
       setTape(t);
       setCaption(t.caption);
     } catch {
-      setError("Failed to load tape.");
+      setLoadError("Failed to load tape.");
     } finally {
       setLoading(false);
     }
@@ -71,6 +117,7 @@ export default function EditTapePage() {
     });
     setThumbnailFile(file);
     setNewThumbnailURL("");
+    clearFieldError("thumbnail");
   };
 
   const clearThumbnail = () => {
@@ -80,6 +127,7 @@ export default function EditTapePage() {
     });
     setThumbnailFile(null);
     setNewThumbnailURL("");
+    clearFieldError("thumbnail");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -87,14 +135,14 @@ export default function EditTapePage() {
     if (!tape) return;
     const trimmed = caption.trim();
     if (!trimmed) {
-      setError("Caption is required");
+      showFieldError("caption", "Caption is required");
       return;
     }
 
     const uploadedKeys: string[] = [];
     try {
       setSaving(true);
-      setError(null);
+      setFieldErrors({});
 
       let finalThumbnailURL = tape.thumbnailURL;
       if (thumbnailFile && !newThumbnailURL) {
@@ -122,7 +170,7 @@ export default function EditTapePage() {
           ?.response?.data?.message ||
         (err as Error)?.message ||
         "Failed to save tape";
-      setError(message);
+      showFieldError("form", message);
     } finally {
       setSaving(false);
     }
@@ -141,7 +189,7 @@ export default function EditTapePage() {
   if (!tape) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-        <p className="text-gray-500">{error || "Tape not found."}</p>
+        <p className="text-gray-500">{loadError || "Tape not found."}</p>
       </div>
     );
   }
@@ -156,31 +204,32 @@ export default function EditTapePage() {
         <p className="text-gray-500 text-sm mt-1">Update caption or thumbnail</p>
       </div>
 
-      {error && (
-        <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          {error}
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
+        <div ref={captionFieldRef}>
           <label htmlFor="caption" className="block text-sm font-medium text-gray-700 mb-2">
             Caption
           </label>
           <textarea
             id="caption"
             value={caption}
-            onChange={(e) => setCaption(e.target.value)}
+            onChange={(e) => {
+              setCaption(e.target.value);
+              clearFieldError("caption");
+            }}
             maxLength={500}
             rows={3}
             placeholder="What's this tape about?"
-            className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none ${
+              fieldErrors.caption
+                ? "border-red-300 focus:ring-red-300"
+                : "border-gray-200"
+            }`}
           />
           <p className="text-xs text-gray-400 mt-1 text-right">{caption.length}/500</p>
+          <FieldError message={fieldErrors.caption} />
         </div>
 
-        <div>
+        <div ref={thumbnailFieldRef}>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Thumbnail
           </label>
@@ -189,7 +238,7 @@ export default function EditTapePage() {
               previewUrl={thumbnailDisplay}
               onSelect={handleThumbnailSelect}
               onClear={clearThumbnail}
-              onValidationError={setError}
+              onValidationError={(message) => showFieldError("thumbnail", message)}
               aspect={TAPE_THUMBNAIL_ASPECT}
               aspectClassName="h-full w-full"
               className="h-full w-full"
@@ -198,6 +247,7 @@ export default function EditTapePage() {
               emptyLabel="Click to upload vertical thumbnail"
             />
           </div>
+          <FieldError message={fieldErrors.thumbnail} />
         </div>
 
         <div>
@@ -214,7 +264,11 @@ export default function EditTapePage() {
           </div>
         </div>
 
-        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3">
+        <div
+          ref={formErrorRef}
+          className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3"
+        >
+          <FieldError message={fieldErrors.form} />
           {thumbnailUpload.uploading && (
             <UploadProgressBar
               label="Uploading thumbnail…"

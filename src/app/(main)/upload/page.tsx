@@ -15,11 +15,13 @@ import {
   POST_MEDIA_ACCEPT,
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
+import { isMp3File } from "@/utils/transcodeAudioToMp3";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
 import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
+import AudioTrimModal from "@/components/voice/AudioTrimModal";
 import {
   Loader2,
   Upload,
@@ -30,6 +32,7 @@ import {
   X,
   Mic,
   Trash2,
+  Scissors,
 } from "@/components/voice/VoiceIcons";
 
 interface Station {
@@ -67,6 +70,9 @@ function UploadPageContent() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [trimModalOpen, setTrimModalOpen] = useState(false);
+  const [trimSourceFile, setTrimSourceFile] = useState<File | null>(null);
+  const [trimSourceDuration, setTrimSourceDuration] = useState(0);
 
   const thumbnailUpload = useVoiceUpload();
   const audioUpload = useVoiceUpload();
@@ -132,6 +138,12 @@ function UploadPageContent() {
     setError(null);
   };
 
+  const openTrimModal = (file: File, mediaDuration: number) => {
+    setTrimSourceFile(file);
+    setTrimSourceDuration(mediaDuration);
+    setTrimModalOpen(true);
+  };
+
   const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -146,17 +158,19 @@ function UploadPageContent() {
       return;
     }
 
-    setAudioFile(file);
     setAudioURL("");
-    setDuration(0);
     setError(null);
 
     try {
       const mediaDuration = await getMediaDuration(file);
-      setDuration(mediaDuration);
       if (mediaDuration > MAX_DURATION) {
-        setError(`Duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
+        setAudioFile(null);
+        setDuration(0);
+        openTrimModal(file, mediaDuration);
+        return;
       }
+      setAudioFile(file);
+      setDuration(mediaDuration);
     } catch {
       setError("Could not read this file. Please try a different audio or video file.");
       setAudioFile(null);
@@ -164,17 +178,39 @@ function UploadPageContent() {
     }
   };
 
+  const handleTrimComplete = async (trimmedFile: File, trimmedDuration: number) => {
+    setAudioFile(trimmedFile);
+    setAudioURL("");
+    setDuration(trimmedDuration);
+    setError(null);
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
+  };
+
+  const handleTrimClose = () => {
+    setTrimModalOpen(false);
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
+  };
+
   const handleAudioLoad = () => {
     if (!audioRef.current) return;
     const raw = audioRef.current.duration;
     if (!Number.isFinite(raw) || raw <= 0) return;
     const audioDuration = Math.floor(raw);
-    setDuration(audioDuration);
     if (audioDuration > MAX_DURATION) {
-      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
-    } else {
-      setError(null);
+      const file = audioFile;
+      if (file) {
+        setAudioFile(null);
+        setDuration(0);
+        openTrimModal(file, audioDuration);
+      } else {
+        setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
+      }
+      return;
     }
+    setDuration(audioDuration);
+    setError(null);
   };
 
   const clearThumbnail = () => {
@@ -263,6 +299,10 @@ function UploadPageContent() {
       return;
     }
     if (!Number.isFinite(duration) || duration > MAX_DURATION) {
+      if (audioFile && duration > MAX_DURATION) {
+        openTrimModal(audioFile, duration);
+        return;
+      }
       setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
       return;
     }
@@ -284,7 +324,9 @@ function UploadPageContent() {
       }
       let finalDuration = duration;
       if (audioFile && !audioURL) {
-        const uploadResult = await audioUpload.uploadPostMedia(audioFile);
+        const uploadResult = await audioUpload.uploadPostMedia(audioFile, {
+          knownDuration: duration,
+        });
         finalAudioURL = uploadResult.assetKey;
         uploadedKeys.push(finalAudioURL);
         if (uploadResult.duration && uploadResult.duration > 0) {
@@ -516,7 +558,11 @@ function UploadPageContent() {
                         <div>
                           <div className="font-medium text-gray-900 truncate max-w-xs">{audioFile.name}</div>
                           <div className="text-sm text-gray-500">
-                            {needsAudioExtraction(audioFile) ? "Video (converted to MP3 on upload) • " : ""}
+                            {needsAudioExtraction(audioFile)
+                              ? "Video → MP3 on upload • "
+                              : !isMp3File(audioFile)
+                                ? "Converted to MP3 on upload • "
+                                : ""}
                             {formatFileSize(audioFile.size)}
                             {duration > 0 && ` • ${formatDuration(duration)}`}
                           </div>
@@ -528,12 +574,24 @@ function UploadPageContent() {
                     </div>
                     {duration > 0 && (
                       <div
-                        className={`flex items-center gap-2 mt-3 p-3 rounded-lg ${
-                          duration > MAX_DURATION ? "bg-red-50 text-red-700" : "bg-green-50 text-green-700"
+                        className={`flex items-center justify-between gap-2 mt-3 p-3 rounded-lg ${
+                          duration > MAX_DURATION ? "bg-amber-50 text-amber-800" : "bg-green-50 text-green-700"
                         }`}
                       >
-                        <Clock className="w-4 h-4" />
-                        <span>Duration: {formatDuration(duration)}</span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Clock className="w-4 h-4 flex-shrink-0" />
+                          <span>Duration: {formatDuration(duration)}</span>
+                        </div>
+                        {duration > MAX_DURATION && audioFile && (
+                          <button
+                            type="button"
+                            onClick={() => openTrimModal(audioFile, duration)}
+                            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-amber-200 text-amber-900 hover:bg-amber-100 transition-colors flex-shrink-0"
+                          >
+                            <Scissors className="w-3.5 h-3.5" />
+                            Trim
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -682,6 +740,16 @@ function UploadPageContent() {
           </button>
         </form>
       </div>
+
+      <AudioTrimModal
+        isOpen={trimModalOpen}
+        file={trimSourceFile}
+        sourceDuration={trimSourceDuration}
+        maxDurationSeconds={MAX_DURATION}
+        title="Trim voice post"
+        onClose={handleTrimClose}
+        onComplete={handleTrimComplete}
+      />
     </>
   );
 }

@@ -13,11 +13,13 @@ import {
   POST_MEDIA_ACCEPT,
   POST_MEDIA_HINT,
 } from "@/utils/voiceMediaUpload";
+import { isMp3File } from "@/utils/transcodeAudioToMp3";
 import { resolveVoiceAssetUrl } from "@/lib/resolveVoiceAssetUrl";
 import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
 import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
+import AudioTrimModal from "@/components/voice/AudioTrimModal";
 import {
   Loader2,
   Music,
@@ -26,9 +28,12 @@ import {
   AlertCircle,
   CheckCircle,
   Save,
+  Scissors,
+  X,
 } from "@/components/voice/VoiceIcons";
 
 const MAX_DURATION = 29 * 60;
+const MAX_DURATION_MINUTES = 29;
 const MAX_AUDIO_SIZE = 500 * 1024 * 1024;
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
@@ -61,6 +66,9 @@ export default function EditPostPage() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [newAudioURL, setNewAudioURL] = useState("");
   const [newDuration, setNewDuration] = useState(0);
+  const [trimModalOpen, setTrimModalOpen] = useState(false);
+  const [trimSourceFile, setTrimSourceFile] = useState<File | null>(null);
+  const [trimSourceDuration, setTrimSourceDuration] = useState(0);
 
   const thumbnailUpload = useVoiceUpload();
   const audioUpload = useVoiceUpload();
@@ -115,6 +123,12 @@ export default function EditPostPage() {
     thumbnailUpload.reset();
   };
 
+  const openTrimModal = (file: File, mediaDuration: number) => {
+    setTrimSourceFile(file);
+    setTrimSourceDuration(mediaDuration);
+    setTrimModalOpen(true);
+  };
+
   const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -129,17 +143,19 @@ export default function EditPostPage() {
       return;
     }
 
-    setAudioFile(file);
     setNewAudioURL("");
-    setNewDuration(0);
     setError(null);
 
     try {
       const mediaDuration = await getMediaDuration(file);
-      setNewDuration(mediaDuration);
       if (mediaDuration > MAX_DURATION) {
-        setError(`Duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+        setAudioFile(null);
+        setNewDuration(0);
+        openTrimModal(file, mediaDuration);
+        return;
       }
+      setAudioFile(file);
+      setNewDuration(mediaDuration);
     } catch {
       setError("Could not read this file. Please try a different audio or video file.");
       setAudioFile(null);
@@ -147,15 +163,37 @@ export default function EditPostPage() {
     }
   };
 
+  const handleTrimComplete = async (trimmedFile: File, trimmedDuration: number) => {
+    setAudioFile(trimmedFile);
+    setNewAudioURL("");
+    setNewDuration(trimmedDuration);
+    setError(null);
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
+  };
+
+  const handleTrimClose = () => {
+    setTrimModalOpen(false);
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
+  };
+
   const handleAudioLoad = () => {
     if (audioRef.current) {
       const d = Math.floor(audioRef.current.duration);
-      setNewDuration(d);
       if (d > MAX_DURATION) {
-        setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
-      } else {
-        setError(null);
+        const file = audioFile;
+        if (file) {
+          setAudioFile(null);
+          setNewDuration(0);
+          openTrimModal(file, d);
+        } else {
+          setError(`Audio duration exceeds maximum allowed (${MAX_DURATION_MINUTES} minutes)`);
+        }
+        return;
       }
+      setNewDuration(d);
+      setError(null);
     }
   };
 
@@ -167,7 +205,7 @@ export default function EditPostPage() {
       return;
     }
     if (audioFile && newDuration > MAX_DURATION) {
-      setError(`Audio duration exceeds maximum allowed (${MAX_DURATION / 60} minutes)`);
+      openTrimModal(audioFile, newDuration);
       return;
     }
     const uploadedKeys: string[] = [];
@@ -189,6 +227,7 @@ export default function EditPostPage() {
       if (audioFile && !newAudioURL) {
         const uploadResult = await audioUpload.uploadPostMedia(audioFile, {
           replaceKey: post.audioURL,
+          knownDuration: newDuration,
         });
         finalAudioURL = uploadResult.assetKey;
         uploadedKeys.push(finalAudioURL);
@@ -351,14 +390,49 @@ export default function EditPostPage() {
               </label>
             ) : (
               <div className="p-4 border border-gray-200 rounded-lg">
-                <div className="font-medium text-gray-900 truncate">{audioFile.name}</div>
-                {needsAudioExtraction(audioFile) && (
-                  <p className="text-sm text-gray-500 mt-1">Video selected — will be converted to MP3 on upload.</p>
-                )}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="font-medium text-gray-900 truncate min-w-0">{audioFile.name}</div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAudioFile(null);
+                      setNewAudioURL("");
+                      setNewDuration(0);
+                      audioUpload.reset();
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 flex-shrink-0"
+                    aria-label="Remove audio"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {needsAudioExtraction(audioFile) ? (
+                  <p className="text-sm text-gray-500 mt-1">Video selected — audio will be extracted and converted to MP3 on upload.</p>
+                ) : !isMp3File(audioFile) ? (
+                  <p className="text-sm text-gray-500 mt-1">Will be converted to MP3 on upload.</p>
+                ) : null}
                 {newDuration > 0 && (
-                  <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-green-50 text-green-700">
-                    <Clock className="w-4 h-4" />
-                    <span>Duration: {formatDuration(newDuration)}</span>
+                  <div
+                    className={`flex items-center justify-between gap-2 mt-3 p-3 rounded-lg ${
+                      newDuration > MAX_DURATION
+                        ? "bg-amber-50 text-amber-800"
+                        : "bg-green-50 text-green-700"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Clock className="w-4 h-4 flex-shrink-0" />
+                      <span>Duration: {formatDuration(newDuration)}</span>
+                    </div>
+                    {newDuration > MAX_DURATION && (
+                      <button
+                        type="button"
+                        onClick={() => openTrimModal(audioFile, newDuration)}
+                        className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-amber-200 text-amber-900 hover:bg-amber-100 transition-colors flex-shrink-0"
+                      >
+                        <Scissors className="w-3.5 h-3.5" />
+                        Trim
+                      </button>
+                    )}
                   </div>
                 )}
                 {newAudioURL && (
@@ -413,6 +487,16 @@ export default function EditPostPage() {
           </button>
         </form>
       </div>
+
+      <AudioTrimModal
+        isOpen={trimModalOpen}
+        file={trimSourceFile}
+        sourceDuration={trimSourceDuration}
+        maxDurationSeconds={MAX_DURATION}
+        title="Trim voice post"
+        onClose={handleTrimClose}
+        onComplete={handleTrimComplete}
+      />
     </>
   );
 }

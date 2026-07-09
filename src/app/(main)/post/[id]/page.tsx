@@ -798,11 +798,11 @@ const PostPage = () => {
               )}
               <div className="min-w-0">
                 <p className="text-sm font-medium text-gray-900 hover:text-gray-600 truncate">{post.station.name}</p>
-                <p className="text-xs text-gray-400">{post.station._count.subscriptions.toLocaleString()} friends</p>
+                <p className="text-xs text-gray-400">{post.station._count.subscriptions.toLocaleString()} joiners</p>
               </div>
             </Link>
 
-            {/* Friend */}
+            {/* Join */}
             {user?.id !== post.station.user.id && (
               <button
                 onClick={handleSubscribe}
@@ -816,9 +816,9 @@ const PostPage = () => {
                 {subscribing ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : post.isSubscribed ? (
-                  <><BellOff className="w-3.5 h-3.5" /><span className="hidden sm:inline">Friends</span></>
+                  <><BellOff className="w-3.5 h-3.5" /><span className="hidden sm:inline">Joiner</span></>
                 ) : (
-                  <><Bell className="w-3.5 h-3.5" /><span className="hidden sm:inline">Friend</span></>
+                  <><Bell className="w-3.5 h-3.5" /><span className="hidden sm:inline">Join</span></>
                 )}
               </button>
             )}

@@ -336,7 +336,7 @@ export default function UserProfilePage() {
                       )}
                       <div className="flex items-center flex-wrap gap-3 mt-2.5 text-xs text-gray-400">
                         <span>{station._count.posts} Audios</span>
-                        <span>{station.subscriberCount} friends</span>
+                        <span>{station.subscriberCount} joiners</span>
                         {station._count.tapes > 0 && (
                           <span>{station._count.tapes} tapes</span>
                         )}

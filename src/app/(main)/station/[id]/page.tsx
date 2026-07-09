@@ -256,7 +256,7 @@ export default function StationPage() {
             <div className="flex items-center flex-wrap gap-x-2 gap-y-1 text-gray-500 mt-1 text-sm sm:text-base">
               <span>@{station.handle}</span>
               <span>•</span>
-              <span>{station.subscriberCount.toLocaleString()} friends</span>
+              <span>{station.subscriberCount.toLocaleString()} joiners</span>
               <span>•</span>
               <span>{station._count.posts} Audios</span>
             </div>
@@ -304,12 +304,12 @@ export default function StationPage() {
                 ) : station.isSubscribed ? (
                   <>
                     <BellOff className="w-4 h-4" />
-                    Friends
+                    Joiner
                   </>
                 ) : (
                   <>
                     <Bell className="w-4 h-4" />
-                    Friend
+                    Join
                   </>
                 )}
               </button>

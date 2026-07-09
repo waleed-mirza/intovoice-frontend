@@ -9,6 +9,7 @@ import useVoiceRecorder from "@/hooks/useVoiceRecorder";
 import {
   TAPE_THUMBNAIL_ASPECT,
   TAPE_THUMBNAIL_SIZE_LABEL,
+  formatDuration,
 } from "@/utils/voiceHelpers";
 import {
   getMediaDuration,
@@ -21,6 +22,7 @@ import { releaseUploadedAssets } from "@/lib/uploadFileToS3";
 import UploadProgressBar from "@/components/voice/UploadProgressBar";
 import { getCombinedUploadProgress, getAudioConversionLabel } from "@/utils/uploadProgress";
 import ThumbnailPicker from "@/components/voice/ThumbnailPicker";
+import AudioTrimModal from "@/components/voice/AudioTrimModal";
 import {
   Loader2,
   Upload,
@@ -28,6 +30,7 @@ import {
   Trash2,
   AlertCircle,
   User,
+  Scissors,
 } from "@/components/voice/VoiceIcons";
 
 interface Station {
@@ -38,15 +41,36 @@ interface Station {
 }
 
 const MAX_DURATION = 59;
-const MAX_AUDIO_SIZE = 50 * 1024 * 1024;
+const MAX_AUDIO_SIZE = 100 * 1024 * 1024;
 
 type AudioSource = "upload" | "record";
 type CreatorMode = "myself" | "station";
+type FieldErrorKey = "station" | "caption" | "thumbnail" | "audio" | "form";
+
+type FieldErrors = Partial<Record<FieldErrorKey, string>>;
+
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      className="mt-2 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm"
+    >
+      <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+      <span>{message}</span>
+    </div>
+  );
+}
 
 export default function TapeUploadPage() {
   const router = useRouter();
   const { user, userLoading } = useAuth();
   const audioRef = useRef<HTMLAudioElement>(null);
+  const stationFieldRef = useRef<HTMLDivElement>(null);
+  const captionFieldRef = useRef<HTMLDivElement>(null);
+  const thumbnailFieldRef = useRef<HTMLDivElement>(null);
+  const audioFieldRef = useRef<HTMLDivElement>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
 
   const [stations, setStations] = useState<Station[]>([]);
   const [creatorMode, setCreatorMode] = useState<CreatorMode>("myself");
@@ -62,10 +86,42 @@ export default function TapeUploadPage() {
   const [duration, setDuration] = useState(0);
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [trimModalOpen, setTrimModalOpen] = useState(false);
+  const [trimSourceFile, setTrimSourceFile] = useState<File | null>(null);
+  const [trimSourceDuration, setTrimSourceDuration] = useState(0);
 
   const thumbnailUpload = useVoiceUpload();
   const audioUpload = useVoiceUpload();
+
+  const clearFieldError = (key: FieldErrorKey) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
+  const showFieldError = (key: FieldErrorKey, message: string) => {
+    setFieldErrors({ [key]: message });
+  };
+
+  useEffect(() => {
+    const key = (Object.keys(fieldErrors)[0] as FieldErrorKey | undefined) ?? null;
+    if (!key) return;
+    const target =
+      key === "station"
+        ? stationFieldRef.current
+        : key === "caption"
+          ? captionFieldRef.current
+          : key === "thumbnail"
+            ? thumbnailFieldRef.current
+            : key === "audio"
+              ? audioFieldRef.current
+              : formErrorRef.current;
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [fieldErrors]);
 
   const {
     isRecording,
@@ -79,7 +135,7 @@ export default function TapeUploadPage() {
   } = useVoiceRecorder({
     maxSeconds: MAX_DURATION,
     onPermissionDenied: () =>
-      setError("Microphone access is required to record audio"),
+      showFieldError("audio", "Microphone access is required to record audio"),
   });
 
   useEffect(() => {
@@ -101,7 +157,13 @@ export default function TapeUploadPage() {
     });
     setThumbnailFile(file);
     setThumbnailURL("");
-    setError(null);
+    clearFieldError("thumbnail");
+  };
+
+  const openTrimModal = (file: File, mediaDuration: number) => {
+    setTrimSourceFile(file);
+    setTrimSourceDuration(mediaDuration);
+    setTrimModalOpen(true);
   };
 
   const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -110,33 +172,65 @@ export default function TapeUploadPage() {
     e.target.value = "";
 
     if (file.size > MAX_AUDIO_SIZE) {
-      setError("File must be less than 50MB");
+      showFieldError("audio", "File must be less than 100MB");
       return;
     }
     if (!isAllowedPostMediaFile(file)) {
-      setError("Please select an audio or video file");
+      showFieldError("audio", "Please select an audio or video file");
       return;
     }
 
-    setAudioFile(file);
-    setUploadPreviewUrl((prev) => {
-      if (prev) URL.revokeObjectURL(prev);
-      return URL.createObjectURL(file);
-    });
     setAudioURL("");
     setDuration(0);
-    setError(null);
+    clearFieldError("audio");
 
     try {
       const mediaDuration = await getMediaDuration(file);
-      setDuration(Math.min(mediaDuration, MAX_DURATION));
       if (mediaDuration > MAX_DURATION) {
-        setError(`Tape duration cannot exceed ${MAX_DURATION} seconds`);
+        setAudioFile(null);
+        setUploadPreviewUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return "";
+        });
+        openTrimModal(file, mediaDuration);
+        return;
       }
+      setAudioFile(file);
+      setUploadPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return URL.createObjectURL(file);
+      });
+      setDuration(mediaDuration);
     } catch {
-      setError("Could not read this file. Please try a different audio file.");
+      showFieldError(
+        "audio",
+        "Could not read this file. Please try a different audio file."
+      );
       setAudioFile(null);
+      setUploadPreviewUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return "";
+      });
     }
+  };
+
+  const handleTrimComplete = async (trimmedFile: File, trimmedDuration: number) => {
+    setAudioFile(trimmedFile);
+    setUploadPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(trimmedFile);
+    });
+    setAudioURL("");
+    setDuration(trimmedDuration);
+    clearFieldError("audio");
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
+  };
+
+  const handleTrimClose = () => {
+    setTrimModalOpen(false);
+    setTrimSourceFile(null);
+    setTrimSourceDuration(0);
   };
 
   const clearThumbnail = () => {
@@ -147,6 +241,7 @@ export default function TapeUploadPage() {
     setThumbnailFile(null);
     setThumbnailURL("");
     thumbnailUpload.reset();
+    clearFieldError("thumbnail");
   };
 
   const clearAudio = () => {
@@ -159,6 +254,7 @@ export default function TapeUploadPage() {
     setDuration(0);
     audioUpload.reset();
     resetAudioState();
+    clearFieldError("audio");
   };
 
   useEffect(() => {
@@ -169,22 +265,22 @@ export default function TapeUploadPage() {
     setAudioFile(file);
     const seconds = Math.max(1, Math.min(recordingSeconds, MAX_DURATION));
     setDuration(seconds);
-    setError(null);
+    clearFieldError("audio");
   }, [recordedBlob, audioSource, recordingSeconds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!caption.trim()) {
-      setError("Caption is required");
+      showFieldError("caption", "Caption is required");
       return;
     }
     if (caption.trim().length > 500) {
-      setError("Caption must be 500 characters or fewer");
+      showFieldError("caption", "Caption must be 500 characters or fewer");
       return;
     }
     if (!thumbnailFile && !thumbnailURL) {
-      setError("Thumbnail is required");
+      showFieldError("thumbnail", "Thumbnail is required");
       return;
     }
 
@@ -194,7 +290,10 @@ export default function TapeUploadPage() {
     if (isRecording) {
       const blob = await stopRecording();
       if (!blob) {
-        setError("Could not save your recording. Try recording again.");
+        showFieldError(
+          "audio",
+          "Could not save your recording. Try recording again."
+        );
         return;
       }
       publishAudioFile = new File([blob], `tape-${Date.now()}.webm`, {
@@ -203,38 +302,52 @@ export default function TapeUploadPage() {
     }
 
     if (!publishAudioFile && !audioURL) {
-      setError("Audio is required");
+      showFieldError("audio", "Audio is required");
       return;
     }
 
     if (publishAudioFile) {
       try {
         const detected = await getMediaDuration(publishAudioFile);
-        publishDuration = Math.min(Math.floor(detected), MAX_DURATION);
-      } catch {
-        if (publishDuration <= 0) {
-          setError("Could not detect audio duration. Try re-uploading or re-recording.");
+        if (detected > MAX_DURATION) {
+          openTrimModal(publishAudioFile, detected);
           return;
         }
-        publishDuration = Math.min(Math.floor(publishDuration), MAX_DURATION);
+        publishDuration = Math.floor(detected);
+      } catch {
+        if (publishDuration <= 0) {
+          showFieldError(
+            "audio",
+            "Could not detect audio duration. Try re-uploading or re-recording."
+          );
+          return;
+        }
+        publishDuration = Math.floor(publishDuration);
       }
     } else {
-      publishDuration = Math.min(Math.floor(publishDuration), MAX_DURATION);
+      publishDuration = Math.floor(publishDuration);
     }
 
     if (publishDuration <= 0 || publishDuration > MAX_DURATION) {
-      setError(`Audio must be between 1 and ${MAX_DURATION} seconds`);
+      if (publishAudioFile && publishDuration > MAX_DURATION) {
+        openTrimModal(publishAudioFile, publishDuration);
+        return;
+      }
+      showFieldError(
+        "audio",
+        `Audio must be between 1 and ${MAX_DURATION} seconds`
+      );
       return;
     }
     if (creatorMode === "station" && !selectedStation) {
-      setError("Please select a station");
+      showFieldError("station", "Please select a station");
       return;
     }
 
     const uploadedKeys: string[] = [];
     try {
       setPublishing(true);
-      setError(null);
+      setFieldErrors({});
 
       let finalThumbnailURL = thumbnailURL;
       let finalAudioURL = audioURL;
@@ -246,7 +359,9 @@ export default function TapeUploadPage() {
 
       let finalDuration = publishDuration;
       if (publishAudioFile && !audioURL) {
-        const uploadResult = await audioUpload.uploadPostMedia(publishAudioFile);
+        const uploadResult = await audioUpload.uploadPostMedia(publishAudioFile, {
+          knownDuration: publishDuration,
+        });
         finalAudioURL = uploadResult.assetKey;
         uploadedKeys.push(finalAudioURL);
         if (uploadResult.duration && uploadResult.duration > 0) {
@@ -255,7 +370,7 @@ export default function TapeUploadPage() {
       }
 
       if (!finalThumbnailURL || !finalAudioURL) {
-        setError("Upload did not complete. Please try again.");
+        showFieldError("form", "Upload did not complete. Please try again.");
         return;
       }
 
@@ -282,14 +397,14 @@ export default function TapeUploadPage() {
         axiosErr.response?.data?.message ||
         axiosErr.message ||
         "Failed to publish tape";
-      setError(message);
+      showFieldError("form", message);
     } finally {
       setPublishing(false);
     }
   };
 
   const handleStartRecording = async () => {
-    setError(null);
+    clearFieldError("audio");
     if (audioFile) clearAudio();
     await startRecording();
   };
@@ -340,22 +455,18 @@ export default function TapeUploadPage() {
         </p>
       </div>
 
-      {error && (
-        <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
-          {error}
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div>
+        <div ref={stationFieldRef}>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Post as
           </label>
           <div className="flex gap-3 mb-3">
             <button
               type="button"
-              onClick={() => setCreatorMode("myself")}
+              onClick={() => {
+                setCreatorMode("myself");
+                clearFieldError("station");
+              }}
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-colors ${
                 creatorMode === "myself"
                   ? "border-gray-900 bg-gray-900 text-white"
@@ -381,8 +492,15 @@ export default function TapeUploadPage() {
           {creatorMode === "station" && (
             <select
               value={selectedStation}
-              onChange={(e) => setSelectedStation(e.target.value)}
-              className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400"
+              onChange={(e) => {
+                setSelectedStation(e.target.value);
+                clearFieldError("station");
+              }}
+              className={`w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 ${
+                fieldErrors.station
+                  ? "border-red-300 focus:ring-red-300"
+                  : "border-gray-200"
+              }`}
               required
             >
               <option value="">Select a station</option>
@@ -393,25 +511,34 @@ export default function TapeUploadPage() {
               ))}
             </select>
           )}
+          <FieldError message={fieldErrors.station} />
         </div>
 
-        <div>
+        <div ref={captionFieldRef}>
           <label htmlFor="caption" className="block text-sm font-medium text-gray-700 mb-2">
             Caption
           </label>
           <textarea
             id="caption"
             value={caption}
-            onChange={(e) => setCaption(e.target.value)}
+            onChange={(e) => {
+              setCaption(e.target.value);
+              clearFieldError("caption");
+            }}
             maxLength={500}
             rows={3}
             placeholder="What's this tape about?"
-            className="w-full rounded-xl border border-gray-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"
+            className={`w-full rounded-xl border px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none ${
+              fieldErrors.caption
+                ? "border-red-300 focus:ring-red-300"
+                : "border-gray-200"
+            }`}
           />
           <p className="text-xs text-gray-400 mt-1 text-right">{caption.length}/500</p>
+          <FieldError message={fieldErrors.caption} />
         </div>
 
-        <div>
+        <div ref={thumbnailFieldRef}>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Thumbnail <span className="text-red-500">*</span>
           </label>
@@ -420,7 +547,7 @@ export default function TapeUploadPage() {
               previewUrl={thumbnailPreview}
               onSelect={handleThumbnailSelect}
               onClear={clearThumbnail}
-              onValidationError={setError}
+              onValidationError={(message) => showFieldError("thumbnail", message)}
               aspect={TAPE_THUMBNAIL_ASPECT}
               aspectClassName="h-full w-full"
               className="h-full w-full"
@@ -429,9 +556,10 @@ export default function TapeUploadPage() {
               emptyLabel="Click to upload vertical thumbnail"
             />
           </div>
+          <FieldError message={fieldErrors.thumbnail} />
         </div>
 
-        <div>
+        <div ref={audioFieldRef}>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Audio <span className="text-red-500">*</span>
           </label>
@@ -458,7 +586,13 @@ export default function TapeUploadPage() {
           </div>
 
           {audioSource === "record" ? (
-            <div className="rounded-xl border border-gray-200 p-4 bg-gray-50">
+            <div
+              className={`rounded-xl border p-4 ${
+                fieldErrors.audio
+                  ? "border-red-300 bg-red-50/40"
+                  : "border-gray-200 bg-gray-50"
+              }`}
+            >
               {isRecording ? (
                 <>
                   <div className="flex items-center justify-between mb-4">
@@ -531,21 +665,45 @@ export default function TapeUploadPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-gray-300 p-6 text-center">
+            <div
+              className={`rounded-xl border border-dashed p-6 text-center ${
+                fieldErrors.audio ? "border-red-300 bg-red-50/40" : "border-gray-300"
+              }`}
+            >
               {audioFile ? (
-                <div className="flex items-center gap-2">
-                  {uploadPreviewUrl && (
-                    <audio src={uploadPreviewUrl} controls className="flex-1 min-w-0" />
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    {uploadPreviewUrl && (
+                      <audio src={uploadPreviewUrl} controls className="flex-1 min-w-0" />
+                    )}
+                    <button
+                      type="button"
+                      onClick={clearAudio}
+                      disabled={isBusy}
+                      className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
+                      aria-label="Remove file"
+                    >
+                      <Trash2 className="w-5 h-5" />
+                    </button>
+                  </div>
+                  {duration > 0 && (
+                    <div className="flex items-center justify-between gap-2 text-sm text-gray-600">
+                      <span>
+                        Duration: {formatDuration(duration)}
+                        {duration > MAX_DURATION ? ` (max ${MAX_DURATION}s)` : ""}
+                      </span>
+                      {duration > MAX_DURATION && (
+                        <button
+                          type="button"
+                          onClick={() => openTrimModal(audioFile, duration)}
+                          className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-gray-200 text-gray-800 hover:bg-gray-50 transition-colors"
+                        >
+                          <Scissors className="w-3.5 h-3.5" />
+                          Trim
+                        </button>
+                      )}
+                    </div>
                   )}
-                  <button
-                    type="button"
-                    onClick={clearAudio}
-                    disabled={isBusy}
-                    className="p-2 text-gray-400 hover:text-red-500 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50 flex-shrink-0"
-                    aria-label="Remove file"
-                  >
-                    <Trash2 className="w-5 h-5" />
-                  </button>
                 </div>
               ) : (
                 <>
@@ -566,9 +724,14 @@ export default function TapeUploadPage() {
               )}
             </div>
           )}
+          <FieldError message={fieldErrors.audio} />
         </div>
 
-        <div className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3">
+        <div
+          ref={formErrorRef}
+          className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 sm:static sm:mx-0 sm:px-0 sm:pt-0 bg-gradient-to-t from-gray-50 from-60% to-transparent sm:bg-none space-y-3"
+        >
+          <FieldError message={fieldErrors.form} />
           {isBusy && uploadProgress && (
             <UploadProgressBar
               label={uploadProgress.label}
@@ -595,6 +758,16 @@ export default function TapeUploadPage() {
           </button>
         </div>
       </form>
+
+      <AudioTrimModal
+        isOpen={trimModalOpen}
+        file={trimSourceFile}
+        sourceDuration={trimSourceDuration}
+        maxDurationSeconds={MAX_DURATION}
+        title="Trim tape"
+        onClose={handleTrimClose}
+        onComplete={handleTrimComplete}
+      />
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import { assertAudioHasSignal } from "@/utils/audioSignal";
 import { getMediaDuration } from "@/utils/voiceMediaUpload";
 
 type ProgressCallback = (percent: number) => void;
@@ -27,18 +28,25 @@ function buildExtractedFileName(originalName: string, mimeType: string): string 
 function pickAudioRecorderMime(): string {
   const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"];
   for (const mime of candidates) {
-    if (MediaRecorder.isTypeSupported(mime)) return mime;
+    if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(mime)) {
+      return mime;
+    }
   }
   throw new Error("This browser cannot record extracted audio");
 }
 
+/**
+ * Chrome/Edge often zero out MediaElementSource when the element is muted.
+ * Keep the element unmuted and route speakers through a zero-gain node instead.
+ */
 function createRecordStream(
   video: HTMLVideoElement,
   strategy: ExtractionStrategy,
   audioContextRef: { current: AudioContext | null }
 ): MediaStream {
   if (strategy === "webaudio") {
-    video.muted = true;
+    video.muted = false;
+    video.volume = 1;
     const audioContext = new AudioContext();
     audioContextRef.current = audioContext;
 
@@ -54,6 +62,8 @@ function createRecordStream(
     return destination.stream;
   }
 
+  // captureStream: keep audible path enabled; volume 0 still captures in most browsers.
+  // Do not set muted=true — that commonly yields a silent captured track.
   video.muted = false;
   video.volume = 0;
 
@@ -165,6 +175,12 @@ async function recordVideoAudio(
                 }
 
                 const blob = new Blob(chunks, { type: mimeType });
+                // Strict: silent or empty extraction must fail so callers can fall back.
+                await assertAudioHasSignal(blob, {
+                  requireDecodable: true,
+                  label: "Extracted audio",
+                });
+
                 const outputType = mimeType.split(";")[0];
                 const audioFile = new File(
                   [blob],
@@ -179,8 +195,10 @@ async function recordVideoAudio(
 
                 onProgress?.(100);
                 finish(() => resolve({ file: audioFile, duration }));
-              } catch {
-                fail("Could not package extracted audio");
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : "Could not package extracted audio";
+                fail(message);
               }
             })();
           };
@@ -205,7 +223,7 @@ async function recordVideoAudio(
 
           video.onended = () => stopRecorder();
 
-          recorder.start(1000);
+          recorder.start(250);
 
           try {
             await video.play();

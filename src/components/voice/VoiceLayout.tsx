@@ -383,7 +383,7 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
                 onClick={() => setSidebarOpen(false)}
               >
                 <Radio className="w-5 h-5" />
-                <span className="font-medium">Friends Circle</span>
+                <span className="font-medium">Join Circle</span>
               </Link>
 
               <Link
@@ -465,7 +465,11 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
       </main>
 
       <nav className="fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-gray-200 flex items-center justify-around z-40 lg:hidden px-1">
-        {navItems.map((item) => (
+        {/* Order: Home, Tapes, Upload (center), Explore, Live */}
+        {[
+          { href: "/", icon: Home, label: "Home" },
+          { href: "/tapes", icon: CassetteTape, label: "Tapes" },
+        ].map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -485,6 +489,24 @@ const VoiceLayout = ({ children, showBackButton }: VoiceLayoutProps) => {
           <Plus className="w-5 h-5 flex-shrink-0" />
           <span className="text-[10px]">Upload</span>
         </button>
+        <Link
+          href="/explore"
+          className={`flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 ${
+            isActive("/explore") ? "text-gray-900" : "text-gray-500"
+          }`}
+        >
+          <Compass className="w-5 h-5 flex-shrink-0" />
+          <span className="text-[10px] truncate">Explore</span>
+        </Link>
+        <Link
+          href="/live"
+          className={`flex flex-col items-center gap-0.5 px-2 py-2 min-w-0 ${
+            isActive("/live") ? "text-gray-900" : "text-gray-500"
+          }`}
+        >
+          <Radio className="w-5 h-5 flex-shrink-0" />
+          <span className="text-[10px] truncate">Live</span>
+        </Link>
       </nav>
     </div>
   );

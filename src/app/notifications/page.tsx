@@ -124,7 +124,7 @@ export default function NotificationsPage() {
   const getNotificationMessage = (type: string) => {
     switch (type) {
       case "voice_subscription":
-        return "is now a friend of your station";
+        return "joined your station";
       case "voice_new_post":
         return "posted new audio content";
       case "voice_like":
@@ -276,7 +276,7 @@ export default function NotificationsPage() {
                 className="w-full sm:w-auto px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-gray-400"
               >
                 <option value="all">All Voice Notifications</option>
-                <option value="voice_subscription">Voice Friends</option>
+                <option value="voice_subscription">Voice Joiners</option>
                 <option value="voice_new_post">Voice New Posts</option>
                 <option value="voice_like">Voice Likes</option>
                 <option value="voice_comment">Voice Comments</option>
@@ -315,7 +315,7 @@ export default function NotificationsPage() {
                 <BsBell className="text-gray-400 mx-auto mb-4" size={32} />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications yet</h3>
                 <p className="text-gray-600">
-                  Voice activity from friends, likes, and comments will show up here.
+                  Voice activity from joiners, likes, and comments will show up here.
                 </p>
               </div>
             ) : (

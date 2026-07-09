@@ -374,13 +374,13 @@ export default function TapeActionRail({
                 <>
                   <BellOff className="w-3.5 h-3.5" />
 
-                  <span className="hidden sm:inline">Friends</span>
+                  <span className="hidden sm:inline">Joiner</span>
                 </>
               ) : (
                 <>
                   <Bell className="w-3.5 h-3.5" />
 
-                  <span className="hidden sm:inline">Friend</span>
+                  <span className="hidden sm:inline">Join</span>
                 </>
               )}
             </button>
@@ -539,7 +539,7 @@ export default function TapeActionRail({
               </span>
               {!compact && (
                 <span className={labelClass}>
-                  {tape.isSubscribed ? "Friends" : "Friend"}
+                  {tape.isSubscribed ? "Joiner" : "Join"}
                 </span>
               )}
             </button>
@@ -664,7 +664,7 @@ export default function TapeActionRail({
 
             {!compact && (
               <span className={`${labelClass} max-w-[52px] text-center`}>
-                {tape.isSubscribed ? "Friends" : "Friend"}
+                {tape.isSubscribed ? "Joiner" : "Join"}
               </span>
             )}
           </button>

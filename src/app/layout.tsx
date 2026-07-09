@@ -12,6 +12,18 @@ export const metadata: Metadata = {
     template: "%s | Into Voice",
   },
   description: "Discover and share audio content on Into Voice",
+  applicationName: "Into Voice",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/intovoice_logo_icon.png", type: "image/png" }],
+    shortcut: ["/intovoice_logo_icon.png"],
+    apple: [{ url: "/intovoice_logo_icon.png", type: "image/png" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Into Voice",
+    statusBarStyle: "black-translucent",
+  },
   openGraph: {
     siteName: "Into Voice",
     type: "website",

@@ -1,11 +1,10 @@
 import { useState, useCallback } from "react";
 import { uploadFileToS3 } from "@/lib/uploadFileToS3";
-import {
-  canUploadAudioDirectly,
-  preparePostAudioForUpload,
-} from "@/utils/preparePostAudio";
+import { preparePostAudioForUpload } from "@/utils/preparePostAudio";
 import { mapConvertingProgress, mapUploadingProgress } from "@/utils/uploadProgress";
 import type { UploadProgress, UploadProgressPhase } from "@/utils/uploadProgress";
+import { needsAudioExtraction } from "@/utils/voiceMediaUpload";
+import { isMp3File } from "@/utils/transcodeAudioToMp3";
 
 export type UploadType = "thumbnail" | "audio" | "avatar" | "banner";
 
@@ -13,7 +12,7 @@ export type { UploadProgress, UploadProgressPhase } from "@/utils/uploadProgress
 
 export interface UploadAudioResult {
   assetKey: string;
-  duration?: number;
+  duration: number;
 }
 
 interface UseVoiceUploadReturn {
@@ -24,7 +23,7 @@ interface UseVoiceUploadReturn {
   ) => Promise<string>;
   uploadPostMedia: (
     file: File,
-    options?: { replaceKey?: string | null }
+    options?: { replaceKey?: string | null; knownDuration?: number }
   ) => Promise<UploadAudioResult>;
   uploading: boolean;
   converting: boolean;
@@ -65,6 +64,10 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
       const afterConversion = options?.overallAfterConversion ?? false;
 
       try {
+        if (!file.size || file.size < 256) {
+          throw new Error("Audio file is empty — conversion may have failed");
+        }
+
         const key = await uploadFileToS3(
           file,
           file.name,
@@ -110,51 +113,58 @@ export const useVoiceUpload = (): UseVoiceUploadReturn => {
   const uploadPostMedia = useCallback(
     async (
       file: File,
-      options?: { replaceKey?: string | null }
+      options?: { replaceKey?: string | null; knownDuration?: number }
     ): Promise<UploadAudioResult> => {
       setError(null);
 
-      try {
-        let audioFile = file;
-        let duration: number | undefined;
-        const needsConversion = !canUploadAudioDirectly(file);
+      // Always run preparePostAudioForUpload (validates MP3; converts everything else).
+      // Never upload raw video or unvalidated blobs.
+      const showConversionUi = !isMp3File(file) || needsAudioExtraction(file);
 
-        if (needsConversion) {
+      try {
+        if (showConversionUi) {
           setConverting(true);
           setProgressPhase("converting");
           setProgress({ loaded: 0, total: 100, percent: 0 });
+        } else {
+          setProgressPhase("converting");
+          setProgress({ loaded: 0, total: 100, percent: 0 });
+        }
 
-          const converted = await preparePostAudioForUpload(file, (phasePercent) => {
+        const prepared = await preparePostAudioForUpload(file, {
+          knownDuration: options?.knownDuration,
+          onProgress: (phasePercent) => {
             setProgress({
               loaded: phasePercent,
               total: 100,
               percent: mapConvertingProgress(phasePercent),
             });
-          });
+          },
+        });
 
-          audioFile = converted.file;
-          duration = converted.duration;
-          setConverting(false);
-          setProgress({
-            loaded: 100,
-            total: 100,
-            percent: mapConvertingProgress(100),
-          });
+        if (!prepared.file.size || prepared.file.size < 256) {
+          throw new Error("Prepared audio was empty");
+        }
+        if (!Number.isFinite(prepared.duration) || prepared.duration <= 0) {
+          throw new Error("Prepared audio has no duration");
         }
 
-        const assetKey = await upload(audioFile, "audio", {
-          overallAfterConversion: needsConversion,
+        setConverting(false);
+        setProgress({
+          loaded: 100,
+          total: 100,
+          percent: mapConvertingProgress(100),
+        });
+
+        const assetKey = await upload(prepared.file, "audio", {
+          overallAfterConversion: showConversionUi,
           replaceKey: options?.replaceKey,
         });
 
-        return { assetKey, duration };
+        return { assetKey, duration: prepared.duration };
       } catch (err: unknown) {
         const axiosErr = err as { message?: string };
-        const errorMessage =
-          axiosErr.message ||
-          (!canUploadAudioDirectly(file)
-            ? "Failed to prepare audio for upload"
-            : "Upload failed");
+        const errorMessage = axiosErr.message || "Failed to prepare audio for upload";
         setError(errorMessage);
         setConverting(false);
         setUploading(false);

@@ -229,7 +229,7 @@ export default function MyStationsPage() {
                     <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
                       <span>{station._count?.posts || 0} Audios</span>
                       <span>
-                        {station.subscriberCount || station._count?.subscriptions || 0} friends
+                        {station.subscriberCount || station._count?.subscriptions || 0} joiners
                       </span>
                       {station.category && (
                         <span className="px-2 py-0.5 bg-gray-100 rounded-full text-xs">

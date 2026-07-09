@@ -250,7 +250,7 @@ export default function AnalyticsPage() {
         <StatCard icon={FileAudio} label="Total Audios" value={basicStats.totalPosts} color="purple" />
         <StatCard
           icon={Users}
-          label="Friends"
+          label="Joiners"
           value={basicStats.totalSubscribers}
           subValue={`+${growth.subscribersThisWeek} this week`}
           trend={growth.subscribersThisWeek > 0 ? "up" : "neutral"}
@@ -280,7 +280,7 @@ export default function AnalyticsPage() {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <div>
-            <p className="text-sm text-gray-500 mb-1">New Friends</p>
+            <p className="text-sm text-gray-500 mb-1">New Joiners</p>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-bold text-gray-900">
                 {growth.subscribersThisWeek}

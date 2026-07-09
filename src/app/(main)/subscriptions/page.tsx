@@ -101,13 +101,13 @@ export default function SubscriptionsPage() {
 
   return (
     <div className="py-6 px-4">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Friends</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Join Circle</h1>
       {posts.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[50vh] text-center">
           <UserPlus className="w-16 h-16 text-gray-300 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 mb-2">No friends yet</h2>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Nothing joined yet</h2>
           <p className="text-gray-500 mb-4 max-w-md">
-            Add stations as friends to see their latest Audios here. Explore and find creators you
+            Join stations to see their latest Audios here. Explore and find creators you
             love!
           </p>
           <Link

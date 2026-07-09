@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Api from "@/lib/axios";
 import { endLiveStreamKeepalive } from "@/lib/endLiveStream";
+import { MAX_LIVE_DURATION_SECONDS } from "@/lib/liveLimits";
 import { useAuth } from "@/providers/AuthProvider";
 import { Loader2 } from "@/components/voice/VoiceIcons";
 import type { LiveStream } from "@/types/live";
@@ -154,13 +155,62 @@ export default function LiveRoomClient() {
     }
 
     const sendHeartbeat = () => {
-      Api.post(`/voice/live/${id}/heartbeat`).catch(() => undefined);
+      Api.post(`/voice/live/${id}/heartbeat`)
+        .then(() => undefined)
+        .catch((err: unknown) => {
+          const status = (err as { response?: { status?: number } })?.response
+            ?.status;
+          if (status === 410) {
+            markEnded();
+          }
+        });
     };
 
     sendHeartbeat();
     const interval = setInterval(sendHeartbeat, 30000);
     return () => clearInterval(interval);
-  }, [role, id, connectionState]);
+  }, [role, id, connectionState, markEnded]);
+
+  // Auto-end when the 59-minute hard cap is reached.
+  useEffect(() => {
+    if (!stream?.startedAt || ended) return;
+
+    const finalizeAtCap = () => {
+      if (endedRef.current) return;
+      if (role === "host") {
+        if (hostFinalizingRef.current) return;
+        hostFinalizingRef.current = true;
+        void (async () => {
+          await endOnServer();
+          await cleanup();
+          markEnded();
+          router.push("/live");
+        })();
+        return;
+      }
+      markEnded();
+    };
+
+    const remainingMs =
+      MAX_LIVE_DURATION_SECONDS * 1000 -
+      (Date.now() - new Date(stream.startedAt).getTime());
+
+    if (remainingMs <= 0) {
+      finalizeAtCap();
+      return;
+    }
+
+    const timer = setTimeout(finalizeAtCap, remainingMs);
+    return () => clearTimeout(timer);
+  }, [
+    stream?.startedAt,
+    role,
+    ended,
+    endOnServer,
+    cleanup,
+    markEnded,
+    router,
+  ]);
 
   // Audience: poll in case the host ended the broadcast on the server first.
   useEffect(() => {

@@ -4,9 +4,9 @@ const CONVERT_WEIGHT = 0.5;
 
 export function getAudioConversionLabel(file: File | null | undefined): string {
   if (file && needsAudioExtraction(file)) {
-    return "Converting video to MP3...";
+    return "Extracting audio and converting to MP3…";
   }
-  return "Converting audio to MP3...";
+  return "Converting to MP3…";
 }
 
 export type UploadProgressPhase = "converting" | "uploading" | null;
