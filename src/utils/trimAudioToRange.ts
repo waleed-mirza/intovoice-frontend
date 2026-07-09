@@ -73,7 +73,9 @@ async function trimWithMediaRecorder(
 
       const media = document.createElement(preferVideo ? "video" : "audio");
       media.preload = "auto";
-      media.playsInline = true;
+      if (media instanceof HTMLVideoElement) {
+        media.playsInline = true;
+      }
       media.setAttribute("playsinline", "true");
       media.crossOrigin = "anonymous";
       media.src = objectUrl;
